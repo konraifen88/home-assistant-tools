@@ -1,0 +1,475 @@
+blueprint:
+  name: Fenster-Warnung ohne Helper mit Sommer-Tiefpunktlogik
+  description: >
+    Benachrichtigt bei offenem Fenster anhand mehrerer Bedingungen:
+    1) Fenster ist länger als X Minuten offen.
+    2) Raumtemperatur fällt unter einen Winter-Schwellwert.
+    3) Raum wurde bei offenem Fenster abgekühlt und wird anschließend wieder wärmer.
+
+    Diese Variante benötigt keine input_number-Helper.
+    Starttemperatur und Tiefsttemperatur werden nur während der laufenden Fensteröffnung intern gespeichert.
+    Nach einem Home-Assistant-Neustart oder Automations-Reload geht diese laufende Überwachung verloren.
+
+    Benachrichtigungen können an eine Liste von notify-Services gesendet werden.
+    KNX, TTS und weitere Aktionen können optional je Auslösegrund ergänzt werden.
+  domain: automation
+  author: Konrad Gruener
+
+  input:
+    room_settings:
+      name: Raum und Sensoren
+      icon: mdi:home-thermometer
+      input:
+        window_sensor:
+          name: Fenstersensor
+          description: "Binary Sensor des Fensters. Standardannahme: on = offen, off = geschlossen."
+          selector:
+            entity:
+              domain: binary_sensor
+
+        inside_temp_sensor:
+          name: Raumtemperatur-Sensor
+          description: Temperatursensor im Raum.
+          selector:
+            entity:
+              domain: sensor
+              device_class: temperature
+
+        outside_temp_sensor:
+          name: Außentemperatur-Sensor optional
+          description: >
+            Optional. Kann für eine zusätzliche Plausibilisierung der Sommerwarnung verwendet werden.
+            Leer lassen, wenn nicht benötigt.
+          default: ""
+          selector:
+            entity:
+              domain: sensor
+              device_class: temperature
+
+        open_state:
+          name: Fenster-Status offen
+          description: Normalerweise ist das bei Fensterkontakten "on".
+          default: "on"
+          selector:
+            text:
+
+        closed_state:
+          name: Fenster-Status geschlossen
+          description: Normalerweise ist das bei Fensterkontakten "off".
+          default: "off"
+          selector:
+            text:
+
+        check_interval_minutes:
+          name: Prüfintervall
+          description: >
+            Wie oft die Automation spätestens neu bewertet, auch wenn sich die Temperatur nicht ändert.
+            Zusätzlich wird bei jeder Temperaturänderung sofort geprüft.
+          default: 2
+          selector:
+            number:
+              min: 1
+              max: 30
+              step: 1
+              unit_of_measurement: min
+              mode: box
+
+    notification_settings:
+      name: Benachrichtigungen
+      icon: mdi:bell
+      input:
+        notify_services:
+          name: Notify-Ziele
+          description: >
+            Liste von notify-Services, z. B.
+            notify.mobile_app_konrad
+            notify.mobile_app_smartphone_frau
+            Alternativ kannst du hier auch eine Notify-Gruppe verwenden, z. B. notify.fenster_warnung.
+          default: []
+          selector:
+            text:
+              multiple: true
+
+    open_too_long_settings:
+      name: "Bedingung: Fenster zu lange offen"
+      icon: mdi:timer-alert
+      input:
+        open_too_long_enabled:
+          name: Aktivieren
+          default: true
+          selector:
+            boolean:
+
+        open_too_long_minutes:
+          name: Offenzeit bis Warnung
+          default: 30
+          selector:
+            number:
+              min: 1
+              max: 240
+              step: 1
+              unit_of_measurement: min
+              mode: box
+
+        open_too_long_title:
+          name: Titel
+          default: "Fenster noch offen"
+          selector:
+            text:
+
+        open_too_long_message:
+          name: Nachricht
+          default: >-
+            {{ area }}: Das Fenster ist seit ca. {{ open_minutes | round(0) }} Minuten offen.
+            Aktuelle Raumtemperatur: {{ inside_temp }} °C.
+          selector:
+            text:
+              multiline: true
+
+        open_too_long_actions:
+          name: Optionale Zusatzaktionen
+          description: Optional, z. B. KNX, TTS, Lichtsignal oder Script.
+          default: []
+          selector:
+            action:
+
+    winter_settings:
+      name: "Bedingung: Winter / Raum kühlt aus"
+      icon: mdi:snowflake-alert
+      input:
+        winter_enabled:
+          name: Aktivieren
+          default: true
+          selector:
+            boolean:
+
+        winter_temp_threshold:
+          name: Raumtemperatur-Untergrenze
+          default: 18
+          selector:
+            number:
+              min: 5
+              max: 25
+              step: 0.1
+              unit_of_measurement: "°C"
+              mode: box
+
+        winter_title:
+          name: Titel
+          default: "Fenster offen - Raum kühlt aus"
+          selector:
+            text:
+
+        winter_message:
+          name: Nachricht
+          default: >-
+            {{ area }}: Das Fenster ist offen und die Raumtemperatur liegt bei {{ inside_temp }} °C.
+            Der Grenzwert beträgt {{ winter_temp_threshold }} °C.
+          selector:
+            text:
+              multiline: true
+
+        winter_actions:
+          name: Optionale Zusatzaktionen
+          description: Optional, z. B. KNX, TTS, Lichtsignal oder Script.
+          default: []
+          selector:
+            action:
+
+    summer_settings:
+      name: "Bedingung: Sommer / Raum wird nach Abkühlung wieder wärmer"
+      icon: mdi:weather-sunny-alert
+      input:
+        summer_enabled:
+          name: Aktivieren
+          default: true
+          selector:
+            boolean:
+
+        summer_min_open_minutes:
+          name: Mindestdauer Fenster offen
+          description: Verhindert, dass direkt nach dem Öffnen durch Messrauschen gewarnt wird.
+          default: 30
+          selector:
+            number:
+              min: 0
+              max: 480
+              step: 1
+              unit_of_measurement: min
+              mode: box
+
+        summer_min_cooling:
+          name: Mindest-Abkühlung seit Öffnung
+          description: >
+            Der Raum muss seit dem Öffnen mindestens um diesen Wert abgekühlt sein,
+            bevor die Wiedererwärmung bewertet wird.
+          default: 1.0
+          selector:
+            number:
+              min: 0
+              max: 10
+              step: 0.1
+              unit_of_measurement: "°C"
+              mode: box
+
+        summer_rise_from_min:
+          name: Wiederanstieg ab Tiefsttemperatur
+          description: >
+            Warnung, wenn die Raumtemperatur seit dem erreichten Tiefpunkt wieder um diesen Wert gestiegen ist.
+          default: 0.5
+          selector:
+            number:
+              min: 0.1
+              max: 5
+              step: 0.1
+              unit_of_measurement: "°C"
+              mode: box
+
+        summer_outside_guard_enabled:
+          name: Sommerwarnung mit Außentemperatur plausibilisieren
+          description: >
+            Wenn aktiviert, wird die Sommerwarnung nur ausgelöst, wenn ein Außentemperatur-Sensor gesetzt ist
+            und die Außentemperatur nicht mehr deutlich kühler als die Raumtemperatur ist.
+            Sinnvoll, wenn du vermeiden willst, dass bei weiterhin kühler Außenluft zu früh gewarnt wird.
+          default: false
+          selector:
+            boolean:
+
+        summer_outside_margin:
+          name: Außentemperatur-Toleranz
+          description: >
+            Nur relevant, wenn die Außentemperatur-Plausibilisierung aktiviert ist.
+            Beispiel 0.5 bedeutet: Warnung erst, wenn draußen höchstens noch 0.5 °C kühler als innen ist.
+          default: 0.5
+          selector:
+            number:
+              min: 0
+              max: 5
+              step: 0.1
+              unit_of_measurement: "°C"
+              mode: box
+
+        summer_title:
+          name: Titel
+          default: "Fenster schließen - Raum wird wieder wärmer"
+          selector:
+            text:
+
+        summer_message:
+          name: Nachricht
+          default: >-
+            {{ area }}: Der Raum wurde von {{ start_temp }} °C auf {{ min_temp }} °C abgekühlt
+            und ist jetzt wieder auf {{ inside_temp }} °C gestiegen.
+            Anstieg seit Tiefpunkt: {{ rise_from_min }} °C.
+          selector:
+            text:
+              multiline: true
+
+        summer_actions:
+          name: Optionale Zusatzaktionen
+          description: Optional, z. B. KNX, TTS, Lichtsignal oder Script.
+          default: []
+          selector:
+            action:
+
+trigger:
+  - platform: state
+    entity_id: !input window_sensor
+    to: !input open_state
+    id: opened
+
+condition: []
+
+action:
+  - variables:
+      window_entity: !input window_sensor
+      inside_temp_entity: !input inside_temp_sensor
+      outside_temp_entity: !input outside_temp_sensor
+      open_state_value: !input open_state
+      closed_state_value: !input closed_state
+      notify_services: !input notify_services
+
+      check_interval_minutes: !input check_interval_minutes
+
+      open_too_long_enabled: !input open_too_long_enabled
+      open_too_long_minutes: !input open_too_long_minutes
+
+      winter_enabled: !input winter_enabled
+      winter_temp_threshold: !input winter_temp_threshold
+
+      summer_enabled: !input summer_enabled
+      summer_min_open_minutes: !input summer_min_open_minutes
+      summer_min_cooling: !input summer_min_cooling
+      summer_rise_from_min: !input summer_rise_from_min
+      summer_outside_guard_enabled: !input summer_outside_guard_enabled
+      summer_outside_margin: !input summer_outside_margin
+
+      area: >-
+        {{
+          area_name(window_entity)
+          or area_name(inside_temp_entity)
+          or state_attr(window_entity, 'friendly_name')
+          or window_entity
+        }}
+
+      start_ts: "{{ as_timestamp(now()) }}"
+      start_temp: "{{ states(inside_temp_entity) | float(0) }}"
+      min_temp: "{{ states(inside_temp_entity) | float(0) }}"
+      warning_reason: "none"
+
+  - repeat:
+      while:
+        - condition: template
+          value_template: >-
+            {{
+              is_state(window_entity, open_state_value)
+              and warning_reason == 'none'
+            }}
+      sequence:
+        - wait_for_trigger:
+            - platform: state
+              entity_id: !input window_sensor
+              to: !input closed_state
+              id: closed
+
+            - platform: state
+              entity_id: !input inside_temp_sensor
+              id: temperature_changed
+          timeout:
+            minutes: !input check_interval_minutes
+          continue_on_timeout: true
+
+        - variables:
+            current_temp_raw: "{{ states(inside_temp_entity) | float(0) }}"
+            min_temp: "{{ [min_temp | float(0), current_temp_raw | float(0)] | min }}"
+            inside_temp: "{{ current_temp_raw | float(0) | round(1) }}"
+            outside_temp: >-
+              {% if outside_temp_entity | length > 0 and states(outside_temp_entity) | is_number %}
+                {{ states(outside_temp_entity) | float | round(1) }}
+              {% else %}
+                {{ none }}
+              {% endif %}
+            open_minutes: "{{ ((as_timestamp(now()) - start_ts | float(0)) / 60) | round(1) }}"
+            cooling: "{{ (start_temp | float(0) - min_temp | float(0)) | round(1) }}"
+            rise_from_min: "{{ (current_temp_raw | float(0) - min_temp | float(0)) | round(1) }}"
+            outside_guard_ok: >-
+              {{
+                not summer_outside_guard_enabled
+                or (
+                  outside_temp_entity | length > 0
+                  and states(outside_temp_entity) | is_number
+                  and states(outside_temp_entity) | float >= current_temp_raw | float - summer_outside_margin | float
+                )
+              }}
+
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: >-
+                    {{
+                      is_state(window_entity, open_state_value)
+                      and winter_enabled
+                      and current_temp_raw | float <= winter_temp_threshold | float
+                    }}
+              sequence:
+                - variables:
+                    warning_reason: "winter"
+
+            - conditions:
+                - condition: template
+                  value_template: >-
+                    {{
+                      is_state(window_entity, open_state_value)
+                      and summer_enabled
+                      and open_minutes | float >= summer_min_open_minutes | float
+                      and cooling | float >= summer_min_cooling | float
+                      and rise_from_min | float >= summer_rise_from_min | float
+                      and outside_guard_ok
+                    }}
+              sequence:
+                - variables:
+                    warning_reason: "summer"
+
+            - conditions:
+                - condition: template
+                  value_template: >-
+                    {{
+                      is_state(window_entity, open_state_value)
+                      and open_too_long_enabled
+                      and open_minutes | float >= open_too_long_minutes | float
+                    }}
+              sequence:
+                - variables:
+                    warning_reason: "open_too_long"
+
+  - variables:
+      inside_temp: "{{ states(inside_temp_entity) | float(0) | round(1) }}"
+      start_temp: "{{ start_temp | float(0) | round(1) }}"
+      min_temp: "{{ min_temp | float(0) | round(1) }}"
+      open_minutes: "{{ ((as_timestamp(now()) - start_ts | float(0)) / 60) | round(1) }}"
+      cooling: "{{ (start_temp | float(0) - min_temp | float(0)) | round(1) }}"
+      rise_from_min: "{{ (states(inside_temp_entity) | float(0) - min_temp | float(0)) | round(1) }}"
+      outside_temp: >-
+        {% if outside_temp_entity | length > 0 and states(outside_temp_entity) | is_number %}
+          {{ states(outside_temp_entity) | float | round(1) }}
+        {% else %}
+          {{ none }}
+        {% endif %}
+
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ warning_reason == 'open_too_long' }}"
+        sequence:
+          - repeat:
+              for_each: !input notify_services
+              sequence:
+                - service: "{{ repeat.item }}"
+                  data:
+                    title: !input open_too_long_title
+                    message: !input open_too_long_message
+
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ true }}"
+                sequence: !input open_too_long_actions
+
+      - conditions:
+          - condition: template
+            value_template: "{{ warning_reason == 'winter' }}"
+        sequence:
+          - repeat:
+              for_each: !input notify_services
+              sequence:
+                - service: "{{ repeat.item }}"
+                  data:
+                    title: !input winter_title
+                    message: !input winter_message
+
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ true }}"
+                sequence: !input winter_actions
+
+      - conditions:
+          - condition: template
+            value_template: "{{ warning_reason == 'summer' }}"
+        sequence:
+          - repeat:
+              for_each: !input notify_services
+              sequence:
+                - service: "{{ repeat.item }}"
+                  data:
+                    title: !input summer_title
+                    message: !input summer_message
+
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ true }}"
+                sequence: !input summer_actions
+
+mode: single
+max_exceeded: silent
