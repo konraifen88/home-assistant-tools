@@ -1,45 +1,47 @@
 blueprint:
-  name: Fenster-Warnung ohne Helper mit Sommer-Tiefpunktlogik
+  name: Window Warning (no helpers) with summer low-point logic
   description: >
-    Benachrichtigt bei offenem Fenster anhand mehrerer Bedingungen:
-    1) Fenster ist länger als X Minuten offen.
-    2) Raumtemperatur fällt unter einen Winter-Schwellwert.
-    3) Raum wurde bei offenem Fenster abgekühlt und wird anschließend wieder wärmer.
+    Notifies when a window has been left open based on multiple conditions:
+    1) The window has been open for more than the configured time.
+    2) The room temperature drops below a configurable winter threshold.
+    3) In summer mode: the room cooled while the window was open and then starts warming again,
+       indicating that the window should be closed.
 
-    Diese Variante benötigt keine input_number-Helper.
-    Starttemperatur und Tiefsttemperatur werden nur während der laufenden Fensteröffnung intern gespeichert.
-    Nach einem Home-Assistant-Neustart oder Automations-Reload geht diese laufende Überwachung verloren.
+    This variant does not require input_number helpers. Start and minimum temperatures are
+    stored only while the window is open and the monitoring run is active. This transient state
+    is lost on Home Assistant restart or when automations are reloaded.
 
-    Benachrichtigungen können an eine Liste von notify-Services gesendet werden.
-    KNX, TTS und weitere Aktionen können optional je Auslösegrund ergänzt werden.
+    Notifications are sent to a list of notify services. Additional actions (KNX, TTS, scripts,
+    etc.) can be attached per trigger.
   domain: automation
   author: Konrad Gruener
+  version: 1.0.0
 
   input:
     room_settings:
-      name: Raum und Sensoren
+      name: Room and sensors
       icon: mdi:home-thermometer
       input:
         window_sensor:
-          name: Fenstersensor
-          description: "Binary Sensor des Fensters. Standardannahme: on = offen, off = geschlossen."
+          name: Window sensor
+          description: "Binary sensor for the window. Default assumption: on = open, off = closed."
           selector:
             entity:
               domain: binary_sensor
 
         inside_temp_sensor:
-          name: Raumtemperatur-Sensor
-          description: Temperatursensor im Raum.
+          name: Indoor temperature sensor
+          description: Temperature sensor placed in the room.
           selector:
             entity:
               domain: sensor
               device_class: temperature
 
         outside_temp_sensor:
-          name: Außentemperatur-Sensor optional
+          name: Outside temperature sensor (optional)
           description: >
-            Optional. Kann für eine zusätzliche Plausibilisierung der Sommerwarnung verwendet werden.
-            Leer lassen, wenn nicht benötigt.
+            Optional. Can be used to improve plausibility checks for the summer warning.
+            Leave empty if not available.
           default: ""
           selector:
             entity:
@@ -47,24 +49,24 @@ blueprint:
               device_class: temperature
 
         open_state:
-          name: Fenster-Status offen
-          description: Normalerweise ist das bei Fensterkontakten "on".
+          name: Open state value
+          description: Usually the window contact reports "on" when open.
           default: "on"
           selector:
             text:
 
         closed_state:
-          name: Fenster-Status geschlossen
-          description: Normalerweise ist das bei Fensterkontakten "off".
+          name: Closed state value
+          description: Usually the window contact reports "off" when closed.
           default: "off"
           selector:
             text:
 
         check_interval_minutes:
-          name: Prüfintervall
+          name: Check interval
           description: >
-            Wie oft die Automation spätestens neu bewertet, auch wenn sich die Temperatur nicht ändert.
-            Zusätzlich wird bei jeder Temperaturänderung sofort geprüft.
+            How often (in minutes) the automation is re-evaluated at latest, even if the
+            temperature hasn't changed. Temperature changes trigger an immediate re-check.
           default: 2
           selector:
             number:
@@ -75,33 +77,33 @@ blueprint:
               mode: box
 
     notification_settings:
-      name: Benachrichtigungen
+      name: Notifications
       icon: mdi:bell
       input:
         notify_services:
-          name: Notify-Ziele
+          name: Notify targets
           description: >
-            Liste von notify-Services, z. B.
+            List of notify services, e.g.:
             notify.mobile_app_konrad
-            notify.mobile_app_smartphone_frau
-            Alternativ kannst du hier auch eine Notify-Gruppe verwenden, z. B. notify.fenster_warnung.
+            notify.mobile_app_smartphone_partner
+            You can also provide a notify group such as notify.window_warning.
           default: []
           selector:
             text:
               multiple: true
 
     open_too_long_settings:
-      name: "Bedingung: Fenster zu lange offen"
+      name: "Condition: Window open too long"
       icon: mdi:timer-alert
       input:
         open_too_long_enabled:
-          name: Aktivieren
+          name: Enable
           default: true
           selector:
             boolean:
 
         open_too_long_minutes:
-          name: Offenzeit bis Warnung
+          name: Minutes open before warning
           default: 30
           selector:
             number:
@@ -112,39 +114,39 @@ blueprint:
               mode: box
 
         open_too_long_title:
-          name: Titel
-          default: "Fenster noch offen"
+          name: Title
+          default: "Window still open"
           selector:
             text:
 
         open_too_long_message:
-          name: Nachricht
+          name: Message
           default: >-
-            {{ area }}: Das Fenster ist seit ca. {{ open_minutes | round(0) }} Minuten offen.
-            Aktuelle Raumtemperatur: {{ inside_temp }} °C.
+            {{ area }}: The window has been open for approximately {{ open_minutes | round(0) }} minutes.
+            Current room temperature: {{ inside_temp }} °C.
           selector:
             text:
               multiline: true
 
         open_too_long_actions:
-          name: Optionale Zusatzaktionen
-          description: Optional, z. B. KNX, TTS, Lichtsignal oder Script.
+          name: Optional additional actions
+          description: Optional actions, e.g. KNX, TTS, light signal or a script.
           default: []
           selector:
             action:
 
     winter_settings:
-      name: "Bedingung: Winter / Raum kühlt aus"
+      name: "Condition: Winter / room cooling"
       icon: mdi:snowflake-alert
       input:
         winter_enabled:
-          name: Aktivieren
+          name: Enable
           default: true
           selector:
             boolean:
 
         winter_temp_threshold:
-          name: Raumtemperatur-Untergrenze
+          name: Room temperature lower bound
           default: 18
           selector:
             number:
@@ -155,40 +157,40 @@ blueprint:
               mode: box
 
         winter_title:
-          name: Titel
-          default: "Fenster offen - Raum kühlt aus"
+          name: Title
+          default: "Window open - room cooling"
           selector:
             text:
 
         winter_message:
-          name: Nachricht
+          name: Message
           default: >-
-            {{ area }}: Das Fenster ist offen und die Raumtemperatur liegt bei {{ inside_temp }} °C.
-            Der Grenzwert beträgt {{ winter_temp_threshold }} °C.
+            {{ area }}: The window is open and the room temperature is {{ inside_temp }} °C.
+            The configured threshold is {{ winter_temp_threshold }} °C.
           selector:
             text:
               multiline: true
 
         winter_actions:
-          name: Optionale Zusatzaktionen
-          description: Optional, z. B. KNX, TTS, Lichtsignal oder Script.
+          name: Optional additional actions
+          description: Optional actions, e.g. KNX, TTS, light signal or a script.
           default: []
           selector:
             action:
 
     summer_settings:
-      name: "Bedingung: Sommer / Raum wird nach Abkühlung wieder wärmer"
+      name: "Condition: Summer / room warms after cooling"
       icon: mdi:weather-sunny-alert
       input:
         summer_enabled:
-          name: Aktivieren
+          name: Enable
           default: true
           selector:
             boolean:
 
         summer_min_open_minutes:
-          name: Mindestdauer Fenster offen
-          description: Verhindert, dass direkt nach dem Öffnen durch Messrauschen gewarnt wird.
+          name: Minimum open minutes
+          description: Prevents warnings immediately after opening due to sensor noise.
           default: 30
           selector:
             number:
@@ -199,10 +201,10 @@ blueprint:
               mode: box
 
         summer_min_cooling:
-          name: Mindest-Abkühlung seit Öffnung
+          name: Minimum cooling since opening
           description: >
-            Der Raum muss seit dem Öffnen mindestens um diesen Wert abgekühlt sein,
-            bevor die Wiedererwärmung bewertet wird.
+            The room must have cooled by at least this value since opening before
+            re-warming is evaluated.
           default: 1.0
           selector:
             number:
@@ -213,9 +215,10 @@ blueprint:
               mode: box
 
         summer_rise_from_min:
-          name: Wiederanstieg ab Tiefsttemperatur
+          name: Rise from minimum
           description: >
-            Warnung, wenn die Raumtemperatur seit dem erreichten Tiefpunkt wieder um diesen Wert gestiegen ist.
+            Trigger when the room temperature has risen by this value since the minimum
+            recorded while the window was open.
           default: 0.5
           selector:
             number:
@@ -226,20 +229,20 @@ blueprint:
               mode: box
 
         summer_outside_guard_enabled:
-          name: Sommerwarnung mit Außentemperatur plausibilisieren
+          name: Use outside temperature guard
           description: >
-            Wenn aktiviert, wird die Sommerwarnung nur ausgelöst, wenn ein Außentemperatur-Sensor gesetzt ist
-            und die Außentemperatur nicht mehr deutlich kühler als die Raumtemperatur ist.
-            Sinnvoll, wenn du vermeiden willst, dass bei weiterhin kühler Außenluft zu früh gewarnt wird.
+            When enabled, the summer warning is only triggered if an outside temperature sensor
+            is set and the outside temperature is not significantly cooler than inside. Useful
+            to avoid warnings while it is still cooler outside.
           default: false
           selector:
             boolean:
 
         summer_outside_margin:
-          name: Außentemperatur-Toleranz
+          name: Outside temperature margin
           description: >
-            Nur relevant, wenn die Außentemperatur-Plausibilisierung aktiviert ist.
-            Beispiel 0.5 bedeutet: Warnung erst, wenn draußen höchstens noch 0.5 °C kühler als innen ist.
+            Only relevant when the outside guard is enabled. Example: 0.5 means the outside
+            temperature must be at most 0.5 °C cooler than inside for the warning to trigger.
           default: 0.5
           selector:
             number:
@@ -250,24 +253,23 @@ blueprint:
               mode: box
 
         summer_title:
-          name: Titel
-          default: "Fenster schließen - Raum wird wieder wärmer"
+          name: Title
+          default: "Please close window - room warming again"
           selector:
             text:
 
         summer_message:
-          name: Nachricht
+          name: Message
           default: >-
-            {{ area }}: Der Raum wurde von {{ start_temp }} °C auf {{ min_temp }} °C abgekühlt
-            und ist jetzt wieder auf {{ inside_temp }} °C gestiegen.
-            Anstieg seit Tiefpunkt: {{ rise_from_min }} °C.
+            {{ area }}: The room cooled from {{ start_temp }} °C to {{ min_temp }} °C
+            and is now back to {{ inside_temp }} °C. Rise since minimum: {{ rise_from_min }} °C.
           selector:
             text:
               multiline: true
 
         summer_actions:
-          name: Optionale Zusatzaktionen
-          description: Optional, z. B. KNX, TTS, Lichtsignal oder Script.
+          name: Optional additional actions
+          description: Optional actions, e.g. KNX, TTS, light signal or a script.
           default: []
           selector:
             action:
