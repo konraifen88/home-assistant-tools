@@ -15,7 +15,6 @@ blueprint:
     etc.) can be attached per trigger.
   domain: automation
   author: Konrad Gruener
-  version: 1.0.0
 
   input:
     room_settings:
