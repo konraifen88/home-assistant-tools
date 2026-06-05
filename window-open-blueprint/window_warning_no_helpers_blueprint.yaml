@@ -450,11 +450,11 @@ action:
               {% endif %}
             notification_message: >-
               {% if warning_reason == 'winter' %}
-                {{ winter_message }}
+                {{ area }}: The window is open and the room temperature is {{ inside_temp }} °C. The configured threshold is {{ winter_temp_threshold }} °C.
               {% elif warning_reason == 'summer' %}
-                {{ summer_message }}
+                {{ area }}: The room cooled from {{ start_temp }} °C to {{ min_temp }} °C and is now back to {{ inside_temp }} °C. Rise since minimum: {{ rise_from_min }} °C.
               {% elif warning_reason == 'open_too_long' %}
-                {{ open_too_long_message }}
+                {{ area }}: The window has been open for approximately {{ open_minutes | round(0) }} minutes. Current room temperature: {{ inside_temp }} °C.
               {% else %}
                 {{ none }}
               {% endif %}
