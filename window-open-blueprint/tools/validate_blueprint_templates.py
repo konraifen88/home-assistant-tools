@@ -117,6 +117,9 @@ env.globals.update({
     'winter_temp_threshold': 18.0,
     'rise_from_min': 0.5,
     'outside_guard_ok': True,
+    'notification_tag': 'window_warning',
+    'notification_title': 'Test title',
+    'notification_message': 'Test message',
 })
 
 # Render all templates
