@@ -103,8 +103,9 @@ blueprint:
         notification_clear_service:
           name: Notification clear service
           description: >
-            Optional service that can clear or dismiss the active notification when
-            the window is closed. Example: mobile_app.clear_notification.
+            Optional additional service that can clear or dismiss the active notification when
+            the window is closed. The blueprint also sends the standard mobile app
+            clear_notification command to every configured notify target.
           default: ""
           selector:
             text:
@@ -450,11 +451,11 @@ action:
               {% endif %}
             notification_message: >-
               {% if warning_reason == 'winter' %}
-                {{ area }}: The window is open and the room temperature is {{ inside_temp }} °C. The configured threshold is {{ winter_temp_threshold }} °C.
+                {{ winter_message }}
               {% elif warning_reason == 'summer' %}
-                {{ area }}: The room cooled from {{ start_temp }} °C to {{ min_temp }} °C and is now back to {{ inside_temp }} °C. Rise since minimum: {{ rise_from_min }} °C.
+                {{ summer_message }}
               {% elif warning_reason == 'open_too_long' %}
-                {{ area }}: The window has been open for approximately {{ open_minutes | round(0) }} minutes. Current room temperature: {{ inside_temp }} °C.
+                {{ open_too_long_message }}
               {% else %}
                 {{ none }}
               {% endif %}
@@ -475,6 +476,7 @@ action:
                             {{ notification_message if notification_message is not none and notification_message | string | trim != '' else (notification_title if notification_title is not none and notification_title | string | trim != '' else area) }}
                           data:
                             tag: "{{ notification_tag_full }}"
+                            alert_once: true
 
                 - choose:
                     - conditions:
@@ -520,11 +522,26 @@ action:
       - conditions:
           - condition: template
             value_template: >-
-              {{ warning_reason != 'none' and notification_clear_service | length > 0 }}
+              {{ warning_reason != 'none' }}
         sequence:
-          - service: "{{ notification_clear_service }}"
-            data:
-              tag: "{{ notification_tag_full }}"
+          - repeat:
+              for_each: !input notify_services
+              sequence:
+                - service: "{{ repeat.item }}"
+                  data:
+                    message: clear_notification
+                    data:
+                      tag: "{{ notification_tag_full }}"
+
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: >-
+                      {{ notification_clear_service | length > 0 }}
+                sequence:
+                  - service: "{{ notification_clear_service }}"
+                    data:
+                      tag: "{{ notification_tag_full }}"
 
 mode: single
 max_exceeded: silent

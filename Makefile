@@ -11,7 +11,7 @@ else
     CREATE_PY := $(shell command -v python3 2>/dev/null || command -v python)
 endif
 
-.PHONY: venv install validate
+.PHONY: venv install validate test
 
 venv:
 	@if [ -z "$(CREATE_PY)" ]; then \
@@ -25,3 +25,7 @@ install: venv
 
 validate: venv
 	$(PY) window-open-blueprint/tools/validate_blueprint_templates.py
+
+test: venv
+	$(PY) window-open-blueprint/tools/validate_blueprint_templates.py
+	$(PY) -m unittest discover -s tests
