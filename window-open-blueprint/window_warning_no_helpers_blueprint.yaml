@@ -511,7 +511,7 @@ action:
             value_template: >-
               {{ warning_reason != 'none' and notification_clear_service | length > 0 }}
         sequence:
-          - service: !input notification_clear_service
+          - service: "{{ notification_clear_service }}"
             data:
               tag: "{{ notification_tag_full }}"
 

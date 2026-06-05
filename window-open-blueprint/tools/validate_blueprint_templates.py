@@ -118,6 +118,7 @@ env.globals.update({
     'rise_from_min': 0.5,
     'outside_guard_ok': True,
     'notification_tag': 'window_warning',
+    'notification_clear_service': 'notify.test',
     'notification_title': 'Test title',
     'notification_message': 'Test message',
     'notification_tag_full': 'window_warning_binary_sensor_window',
