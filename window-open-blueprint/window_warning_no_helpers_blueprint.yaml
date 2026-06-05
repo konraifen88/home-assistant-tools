@@ -139,8 +139,7 @@ blueprint:
         open_too_long_message:
           name: Message
           default: >-
-            {{ area }}: The window has been open for approximately {{ open_minutes | round(0) }} minutes.
-            Current room temperature: {{ inside_temp }} °C.
+            The window has been open for an extended period. Please close it.
           selector:
             text:
               multiline: true
@@ -182,8 +181,7 @@ blueprint:
         winter_message:
           name: Message
           default: >-
-            {{ area }}: The window is open and the room temperature is {{ inside_temp }} °C.
-            The configured threshold is {{ winter_temp_threshold }} °C.
+            The window is open and the room temperature is dropping.
           selector:
             text:
               multiline: true
@@ -278,8 +276,7 @@ blueprint:
         summer_message:
           name: Message
           default: >-
-            {{ area }}: The room cooled from {{ start_temp }} °C to {{ min_temp }} °C
-            and is now back to {{ inside_temp }} °C. Rise since minimum: {{ rise_from_min }} °C.
+            The window is open. The room warmed up after cooling, please close it.
           selector:
             text:
               multiline: true
