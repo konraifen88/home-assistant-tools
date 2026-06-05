@@ -105,6 +105,47 @@ class WindowWarningBlueprintTest(unittest.TestCase):
 
                 self.assertEqual(render_string(template, context), expected_message)
 
+    def test_default_notification_texts_include_room_and_open_minutes(self):
+        grouped_inputs = self.blueprint["blueprint"]["input"]
+        defaults = [
+            grouped_inputs["winter_settings"]["input"],
+            grouped_inputs["summer_settings"]["input"],
+            grouped_inputs["open_too_long_settings"]["input"],
+        ]
+
+        for inputs in defaults:
+            title_default = next(
+                value["default"]
+                for key, value in inputs.items()
+                if key.endswith("_title")
+            )
+            message_default = next(
+                value["default"]
+                for key, value in inputs.items()
+                if key.endswith("_message")
+            )
+
+            self.assertEqual(title_default, "[ROOM] Window open")
+            self.assertIn("[ROOM]", message_default)
+            self.assertIn("[MINUTES]", message_default)
+
+    def test_notification_placeholders_are_rendered(self):
+        title_template = self.notification_variables["notification_title"]
+        message_template = self.notification_variables["notification_message"]
+        context = base_context(
+            warning_reason="winter",
+            area="Kitchen",
+            open_minutes=32.4,
+            winter_title="[ROOM] Window open",
+            winter_message="[ROOM] has been open for [MINUTES] minutes.",
+        )
+
+        self.assertEqual(render_string(title_template, context), "Kitchen Window open")
+        self.assertEqual(
+            render_string(message_template, context),
+            "Kitchen has been open for 32 minutes.",
+        )
+
     def test_closing_window_clears_tagged_mobile_app_notifications(self):
         clear_sequence = self.clear_action["sequence"]
         notify_clear = clear_sequence[0]["repeat"]["sequence"][0]
@@ -186,6 +227,7 @@ def base_context(**overrides):
     context = {
         "window_entity": "binary_sensor.window",
         "open_state_value": "on",
+        "area": "Living Room",
         "warning_reason": "none",
         "winter_enabled": False,
         "current_temp_raw": 21.0,

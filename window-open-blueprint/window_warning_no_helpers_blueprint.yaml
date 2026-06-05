@@ -133,14 +133,14 @@ blueprint:
 
         open_too_long_title:
           name: Title
-          default: "Window still open"
+          default: "[ROOM] Window open"
           selector:
             text:
 
         open_too_long_message:
           name: Message
           default: >-
-            The window has been open for an extended period. Please close it.
+            [ROOM] window has been open for approximately [MINUTES] minutes. Please close it.
           selector:
             text:
               multiline: true
@@ -175,14 +175,14 @@ blueprint:
 
         winter_title:
           name: Title
-          default: "Window open - room cooling"
+          default: "[ROOM] Window open"
           selector:
             text:
 
         winter_message:
           name: Message
           default: >-
-            The window is open and the room temperature is dropping.
+            [ROOM] window has been open for approximately [MINUTES] minutes and the room temperature is below the configured threshold. Please close it.
           selector:
             text:
               multiline: true
@@ -270,14 +270,14 @@ blueprint:
 
         summer_title:
           name: Title
-          default: "Please close window - room warming again"
+          default: "[ROOM] Window open"
           selector:
             text:
 
         summer_message:
           name: Message
           default: >-
-            The window is open. The room warmed up after cooling, please close it.
+            [ROOM] window has been open for approximately [MINUTES] minutes. The room warmed up after cooling, please close it.
           selector:
             text:
               multiline: true
@@ -441,21 +441,21 @@ action:
         - variables:
             notification_title: >-
               {% if warning_reason == 'winter' %}
-                {{ winter_title }}
+                {{ (winter_title | string) | replace('[ROOM]', area | string) | replace('[MINUTES]', open_minutes | float(0) | round(0) | int | string) }}
               {% elif warning_reason == 'summer' %}
-                {{ summer_title }}
+                {{ (summer_title | string) | replace('[ROOM]', area | string) | replace('[MINUTES]', open_minutes | float(0) | round(0) | int | string) }}
               {% elif warning_reason == 'open_too_long' %}
-                {{ open_too_long_title }}
+                {{ (open_too_long_title | string) | replace('[ROOM]', area | string) | replace('[MINUTES]', open_minutes | float(0) | round(0) | int | string) }}
               {% else %}
                 {{ none }}
               {% endif %}
             notification_message: >-
               {% if warning_reason == 'winter' %}
-                {{ winter_message }}
+                {{ (winter_message | string) | replace('[ROOM]', area | string) | replace('[MINUTES]', open_minutes | float(0) | round(0) | int | string) }}
               {% elif warning_reason == 'summer' %}
-                {{ summer_message }}
+                {{ (summer_message | string) | replace('[ROOM]', area | string) | replace('[MINUTES]', open_minutes | float(0) | round(0) | int | string) }}
               {% elif warning_reason == 'open_too_long' %}
-                {{ open_too_long_message }}
+                {{ (open_too_long_message | string) | replace('[ROOM]', area | string) | replace('[MINUTES]', open_minutes | float(0) | round(0) | int | string) }}
               {% else %}
                 {{ none }}
               {% endif %}
