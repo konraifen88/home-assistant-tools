@@ -461,7 +461,8 @@ action:
                       - service: "{{ repeat.item }}"
                         data:
                           title: "{{ notification_title }}"
-                          message: "{{ notification_message }}"
+                          message: >-
+                            {{ notification_message if notification_message is not none and notification_message | string | trim != '' else (notification_title if notification_title is not none and notification_title | string | trim != '' else area) }}
                           data:
                             tag: "{{ notification_tag_full }}"
 
