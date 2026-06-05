@@ -107,7 +107,7 @@ blueprint:
             the window is closed. Example: mobile_app.clear_notification.
           default: ""
           selector:
-            service:
+            service: {}
 
     open_too_long_settings:
       name: "Condition: Window open too long"
