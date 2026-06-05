@@ -120,6 +120,7 @@ env.globals.update({
     'notification_tag': 'window_warning',
     'notification_title': 'Test title',
     'notification_message': 'Test message',
+    'notification_tag_full': 'window_warning_binary_sensor_window',
 })
 
 # Render all templates

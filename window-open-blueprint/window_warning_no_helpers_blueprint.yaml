@@ -91,6 +91,24 @@ blueprint:
             text:
               multiple: true
 
+        notification_tag:
+          name: Notification update tag
+          description: >
+            Optional tag used to update the active notification instead of creating
+            a new one each time. Many mobile app notify services support this.
+          default: "window_warning"
+          selector:
+            text:
+
+        notification_clear_service:
+          name: Notification clear service
+          description: >
+            Optional service that can clear or dismiss the active notification when
+            the window is closed. Example: mobile_app.clear_notification.
+          default: ""
+          selector:
+            service:
+
     open_too_long_settings:
       name: "Condition: Window open too long"
       icon: mdi:timer-alert
@@ -317,6 +335,8 @@ action:
       start_temp: "{{ states(inside_temp_entity) | float(0) }}"
       min_temp: "{{ states(inside_temp_entity) | float(0) }}"
       warning_reason: "none"
+      notification_sent: false
+      notification_tag_full: "{{ (notification_tag ~ '_' ~ window_entity) | replace('.', '_') }}"
 
   - repeat:
       while:
@@ -324,7 +344,6 @@ action:
           value_template: >-
             {{
               is_state(window_entity, open_state_value)
-              and warning_reason == 'none'
             }}
       sequence:
         - wait_for_trigger:
@@ -369,6 +388,7 @@ action:
                   value_template: >-
                     {{
                       is_state(window_entity, open_state_value)
+                      and warning_reason == 'none'
                       and winter_enabled
                       and current_temp_raw | float <= winter_temp_threshold | float
                     }}
@@ -381,6 +401,7 @@ action:
                   value_template: >-
                     {{
                       is_state(window_entity, open_state_value)
+                      and warning_reason == 'none'
                       and summer_enabled
                       and open_minutes | float >= summer_min_open_minutes | float
                       and cooling | float >= summer_min_cooling | float
@@ -396,6 +417,7 @@ action:
                   value_template: >-
                     {{
                       is_state(window_entity, open_state_value)
+                      and warning_reason == 'none'
                       and open_too_long_enabled
                       and open_minutes | float >= open_too_long_minutes | float
                     }}
@@ -403,74 +425,93 @@ action:
                 - variables:
                     warning_reason: "open_too_long"
 
-  - variables:
-      inside_temp: "{{ states(inside_temp_entity) | float(0) | round(1) }}"
-      start_temp: "{{ start_temp | float(0) | round(1) }}"
-      min_temp: "{{ min_temp | float(0) | round(1) }}"
-      open_minutes: "{{ ((as_timestamp(now()) - start_ts | float(0)) / 60) | round(1) }}"
-      cooling: "{{ (start_temp | float(0) - min_temp | float(0)) | round(1) }}"
-      rise_from_min: "{{ (states(inside_temp_entity) | float(0) - min_temp | float(0)) | round(1) }}"
-      outside_temp: >-
-        {% if outside_temp_entity | length > 0 and states(outside_temp_entity) | is_number %}
-          {{ states(outside_temp_entity) | float | round(1) }}
-        {% else %}
-          {{ none }}
-        {% endif %}
+        - variables:
+            notification_title: >-
+              {% if warning_reason == 'winter' %}
+                {{ winter_title }}
+              {% elif warning_reason == 'summer' %}
+                {{ summer_title }}
+              {% elif warning_reason == 'open_too_long' %}
+                {{ open_too_long_title }}
+              {% else %}
+                {{ none }}
+              {% endif %}
+            notification_message: >-
+              {% if warning_reason == 'winter' %}
+                {{ winter_message }}
+              {% elif warning_reason == 'summer' %}
+                {{ summer_message }}
+              {% elif warning_reason == 'open_too_long' %}
+                {{ open_too_long_message }}
+              {% else %}
+                {{ none }}
+              {% endif %}
+
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: >-
+                    {{ warning_reason != 'none' }}
+              sequence:
+                - repeat:
+                    for_each: !input notify_services
+                    sequence:
+                      - service: "{{ repeat.item }}"
+                        data:
+                          title: "{{ notification_title }}"
+                          message: "{{ notification_message }}"
+                          data:
+                            tag: "{{ notification_tag_full }}"
+
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: >-
+                            {{ warning_reason == 'open_too_long' and not notification_sent }}
+                      sequence:
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: "{{ true }}"
+                              sequence: !input open_too_long_actions
+                        - variables:
+                            notification_sent: true
+
+                    - conditions:
+                        - condition: template
+                          value_template: >-
+                            {{ warning_reason == 'winter' and not notification_sent }}
+                      sequence:
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: "{{ true }}"
+                              sequence: !input winter_actions
+                        - variables:
+                            notification_sent: true
+
+                    - conditions:
+                        - condition: template
+                          value_template: >-
+                            {{ warning_reason == 'summer' and not notification_sent }}
+                      sequence:
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: "{{ true }}"
+                              sequence: !input summer_actions
+                        - variables:
+                            notification_sent: true
 
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ warning_reason == 'open_too_long' }}"
+            value_template: >-
+              {{ warning_reason != 'none' and notification_clear_service | length > 0 }}
         sequence:
-          - repeat:
-              for_each: !input notify_services
-              sequence:
-                - service: "{{ repeat.item }}"
-                  data:
-                    title: !input open_too_long_title
-                    message: !input open_too_long_message
-
-          - choose:
-              - conditions:
-                  - condition: template
-                    value_template: "{{ true }}"
-                sequence: !input open_too_long_actions
-
-      - conditions:
-          - condition: template
-            value_template: "{{ warning_reason == 'winter' }}"
-        sequence:
-          - repeat:
-              for_each: !input notify_services
-              sequence:
-                - service: "{{ repeat.item }}"
-                  data:
-                    title: !input winter_title
-                    message: !input winter_message
-
-          - choose:
-              - conditions:
-                  - condition: template
-                    value_template: "{{ true }}"
-                sequence: !input winter_actions
-
-      - conditions:
-          - condition: template
-            value_template: "{{ warning_reason == 'summer' }}"
-        sequence:
-          - repeat:
-              for_each: !input notify_services
-              sequence:
-                - service: "{{ repeat.item }}"
-                  data:
-                    title: !input summer_title
-                    message: !input summer_message
-
-          - choose:
-              - conditions:
-                  - condition: template
-                    value_template: "{{ true }}"
-                sequence: !input summer_actions
+          - service: !input notification_clear_service
+            data:
+              tag: "{{ notification_tag_full }}"
 
 mode: single
 max_exceeded: silent
