@@ -309,6 +309,8 @@ action:
       notify_services: !input notify_services
 
       check_interval_minutes: !input check_interval_minutes
+      notification_tag: !input notification_tag
+      notification_clear_service: !input notification_clear_service
 
       open_too_long_enabled: !input open_too_long_enabled
       open_too_long_minutes: !input open_too_long_minutes
