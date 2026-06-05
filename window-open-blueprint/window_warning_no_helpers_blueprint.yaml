@@ -314,9 +314,13 @@ action:
 
       open_too_long_enabled: !input open_too_long_enabled
       open_too_long_minutes: !input open_too_long_minutes
+      open_too_long_title: !input open_too_long_title
+      open_too_long_message: !input open_too_long_message
 
       winter_enabled: !input winter_enabled
       winter_temp_threshold: !input winter_temp_threshold
+      winter_title: !input winter_title
+      winter_message: !input winter_message
 
       summer_enabled: !input summer_enabled
       summer_min_open_minutes: !input summer_min_open_minutes
@@ -324,6 +328,8 @@ action:
       summer_rise_from_min: !input summer_rise_from_min
       summer_outside_guard_enabled: !input summer_outside_guard_enabled
       summer_outside_margin: !input summer_outside_margin
+      summer_title: !input summer_title
+      summer_message: !input summer_message
 
       area: >-
         {{
