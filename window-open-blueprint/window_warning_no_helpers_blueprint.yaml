@@ -342,6 +342,13 @@ action:
       start_ts: "{{ as_timestamp(now()) }}"
       start_temp: "{{ states(inside_temp_entity) | float(0) }}"
       min_temp: "{{ states(inside_temp_entity) | float(0) }}"
+      open_minutes: 0.0
+      inside_temp: 0.0
+      outside_temp: null
+      cooling: 0.0
+      rise_from_min: 0.0
+      current_temp_raw: 0.0
+      outside_guard_ok: true
       warning_reason: "none"
       notification_sent: false
       notification_tag_full: "{{ (notification_tag ~ '_' ~ window_entity) | replace('.', '_') }}"
