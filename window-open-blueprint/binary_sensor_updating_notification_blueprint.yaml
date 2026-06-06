@@ -1,23 +1,25 @@
 blueprint:
-  name: Binary Sensor Updating Notification
+  name: Binary Sensor/Input Boolean Updating Notification
   description: >
-    Sends a tagged notification when a binary sensor turns on, updates that
-    notification every 10 seconds with a counter while the sensor stays on, and
-    clears the notification when the sensor turns off.
+    Sends a tagged notification when a binary sensor or input boolean turns on,
+    updates that notification every 10 seconds with a counter while the entity
+    stays on, and clears the notification when the entity turns off.
   domain: automation
   author: Konrad Gruener
 
   input:
     sensor_settings:
-      name: Binary sensor
+      name: Trigger entity
       icon: mdi:electric-switch
       input:
         binary_sensor:
-          name: Binary sensor
-          description: "Binary sensor that controls the notification. Default: on = active, off = inactive."
+          name: Trigger entity
+          description: "Binary sensor or input boolean that controls the notification. Default: on = active, off = inactive."
           selector:
             entity:
-              domain: binary_sensor
+              domain:
+                - binary_sensor
+                - input_boolean
 
         on_state:
           name: On state value
