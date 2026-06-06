@@ -143,6 +143,17 @@ action:
           or sensor_entity
         }}
       notification_tag_full: "{{ (notification_tag ~ '_' ~ sensor_entity) | replace('.', '_') }}"
+      notification_targets: >-
+        {%- set ns = namespace(targets=[]) -%}
+        {%- for device_id in notify_mobile_app_devices -%}
+          {%- set service = 'notify.mobile_app_' ~ (device_attr(device_id, 'name') | slugify) -%}
+          {%- set ns.targets = ns.targets + [dict(service=service, device_id=device_id)] -%}
+        {%- endfor -%}
+        {%- for service in notify_services -%}
+          {%- set ns.targets = ns.targets + [dict(service=service, device_id='')] -%}
+        {%- endfor -%}
+        {{ ns.targets }}
+      dismissed_services: []
       notification_was_sent: false
 
   - repeat:
@@ -167,36 +178,26 @@ action:
             notification_was_sent: true
 
         - repeat:
-            for_each: !input notify_mobile_app_devices
+            for_each: "{{ notification_targets }}"
             sequence:
-              - service: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
-                data:
-                  title: "{{ notification_title }}"
-                  message: "{{ notification_message }}"
-                  data:
-                    tag: "{{ notification_tag_full }}"
-                    alert_once: true
-                    actions:
-                      - action: "DISMISS_NOTIFICATION"
-                        title: "{{ dismissal_action_title }}"
-                        action_data:
-                          tag: "{{ notification_tag_full }}"
-
-        - repeat:
-            for_each: !input notify_services
-            sequence:
-              - service: "{{ repeat.item }}"
-                data:
-                  title: "{{ notification_title }}"
-                  message: "{{ notification_message }}"
-                  data:
-                    tag: "{{ notification_tag_full }}"
-                    alert_once: true
-                    actions:
-                      - action: "DISMISS_NOTIFICATION"
-                        title: "{{ dismissal_action_title }}"
-                        action_data:
-                          tag: "{{ notification_tag_full }}"
+              - choose:
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ repeat.item.service not in dismissed_services }}"
+                    sequence:
+                      - service: "{{ repeat.item.service }}"
+                        data:
+                          title: "{{ notification_title }}"
+                          message: "{{ notification_message }}"
+                          data:
+                            tag: "{{ notification_tag_full }}"
+                            alert_once: true
+                            actions:
+                              - action: "DISMISS_NOTIFICATION"
+                                title: "{{ dismissal_action_title }}"
+                                action_data:
+                                  tag: "{{ notification_tag_full }}"
+                                  notify_service: "{{ repeat.item.service }}"
 
         - wait_for_trigger:
             - platform: state
@@ -230,25 +231,49 @@ action:
                       )
                     }}
               sequence:
-                - repeat:
-                    for_each: !input notify_mobile_app_devices
-                    sequence:
-                      - service: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
-                        data:
-                          message: clear_notification
-                          data:
-                            tag: "{{ notification_tag_full }}"
+                - variables:
+                    dismissed_service: >-
+                      {%- set data = wait.trigger.event.data -%}
+                      {%- set action_data = data.get('action_data', {}) -%}
+                      {%- if action_data.get('notify_service') -%}
+                        {{ action_data.get('notify_service') }}
+                      {%- elif data.get('notify_service') -%}
+                        {{ data.get('notify_service') }}
+                      {%- elif data.get('device_id') -%}
+                        {%- set ns = namespace(service='') -%}
+                        {%- for target in notification_targets -%}
+                          {%- if target.device_id == data.get('device_id') -%}
+                            {%- set ns.service = target.service -%}
+                          {%- endif -%}
+                        {%- endfor -%}
+                        {{ ns.service }}
+                      {%- else -%}
+                        {{ '' }}
+                      {%- endif -%}
 
-                - repeat:
-                    for_each: !input notify_services
-                    sequence:
-                      - service: "{{ repeat.item }}"
-                        data:
-                          message: clear_notification
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ dismissed_service | length > 0 }}"
+                      sequence:
+                        - variables:
+                            dismissed_services: "{{ (dismissed_services + [dismissed_service]) | unique | list }}"
+                        - service: "{{ dismissed_service }}"
                           data:
-                            tag: "{{ notification_tag_full }}"
+                            message: clear_notification
+                            data:
+                              tag: "{{ notification_tag_full }}"
 
-                - stop: "Notification dismissed until trigger entity turns off"
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: >-
+                            {{
+                              (dismissed_services + [dismissed_service]) | unique | list | length
+                              >= notification_targets | length
+                            }}
+                      sequence:
+                        - stop: "All notification targets dismissed until trigger entity turns off"
 
   - choose:
       - conditions:
@@ -256,18 +281,9 @@ action:
             value_template: "{{ notification_was_sent }}"
         sequence:
           - repeat:
-              for_each: !input notify_mobile_app_devices
+              for_each: "{{ notification_targets }}"
               sequence:
-                - service: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
-                  data:
-                    message: clear_notification
-                    data:
-                      tag: "{{ notification_tag_full }}"
-
-          - repeat:
-              for_each: !input notify_services
-              sequence:
-                - service: "{{ repeat.item }}"
+                - service: "{{ repeat.item.service }}"
                   data:
                     message: clear_notification
                     data:
