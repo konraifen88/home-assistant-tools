@@ -77,6 +77,30 @@ def _walk_selectors(value):
             yield from _walk_selectors(child)
 
 
+def _walk_targets(value):
+    if isinstance(value, dict):
+        if "target" in value:
+            yield value["target"]
+        for child in value.values():
+            yield from _walk_targets(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _walk_targets(child)
+
+
+def _collect_input_defaults(value):
+    defaults = {}
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if isinstance(child, dict) and "selector" in child and "default" in child:
+                defaults[key] = child["default"]
+            defaults.update(_collect_input_defaults(child))
+    elif isinstance(value, list):
+        for child in value:
+            defaults.update(_collect_input_defaults(child))
+    return defaults
+
+
 class BlueprintSelectorTest(unittest.TestCase):
     def test_blueprint_selectors_use_known_types(self):
         for blueprint_path in BLUEPRINT_DIR.glob("*_blueprint.yaml"):
@@ -92,6 +116,26 @@ class BlueprintSelectorTest(unittest.TestCase):
                     self.assertFalse(
                         unknown,
                         f"{blueprint_path.name} uses unknown selector type(s): {sorted(unknown)}",
+                    )
+
+    def test_empty_default_inputs_are_not_used_directly_as_target_entity_id(self):
+        for blueprint_path in BLUEPRINT_DIR.glob("*_blueprint.yaml"):
+            with self.subTest(blueprint=blueprint_path.name):
+                blueprint = yaml.load(
+                    blueprint_path.read_text(encoding="utf-8"),
+                    Loader=BlueprintLoader,
+                )
+                input_defaults = _collect_input_defaults(blueprint["blueprint"]["input"])
+                empty_default_inputs = {
+                    key for key, value in input_defaults.items() if value == ""
+                }
+
+                for target in _walk_targets(blueprint):
+                    entity_id = target.get("entity_id")
+                    self.assertNotIn(
+                        entity_id,
+                        empty_default_inputs,
+                        f"{blueprint_path.name} uses optional input {entity_id!r} directly in target.entity_id",
                     )
 
 

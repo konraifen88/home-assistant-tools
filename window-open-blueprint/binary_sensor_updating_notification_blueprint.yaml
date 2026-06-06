@@ -177,7 +177,7 @@ action:
                         sequence:
                           - service: input_boolean.turn_on
                             target:
-                              entity_id: !input dismissal_helper
+                              entity_id: "{{ dismissal_helper }}"
       - conditions:
           - condition: trigger
             id: turned_off
@@ -189,7 +189,7 @@ action:
                 sequence:
                   - service: input_boolean.turn_off
                     target:
-                      entity_id: !input dismissal_helper
+                      entity_id: "{{ dismissal_helper }}"
       - default:
           - choose:
               - conditions:
