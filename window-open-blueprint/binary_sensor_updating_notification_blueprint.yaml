@@ -1,0 +1,178 @@
+blueprint:
+  name: Binary Sensor Updating Notification
+  description: >
+    Sends a tagged notification when a binary sensor turns on, updates that
+    notification every 10 seconds with a counter while the sensor stays on, and
+    clears the notification when the sensor turns off.
+  domain: automation
+  author: Konrad Gruener
+
+  input:
+    sensor_settings:
+      name: Binary sensor
+      icon: mdi:electric-switch
+      input:
+        binary_sensor:
+          name: Binary sensor
+          description: "Binary sensor that controls the notification. Default: on = active, off = inactive."
+          selector:
+            entity:
+              domain: binary_sensor
+
+        on_state:
+          name: On state value
+          default: "on"
+          selector:
+            text:
+
+        off_state:
+          name: Off state value
+          default: "off"
+          selector:
+            text:
+
+    notification_settings:
+      name: Notifications
+      icon: mdi:bell
+      input:
+        notify_services:
+          name: Notify targets
+          description: >
+            List of notify services, e.g.:
+            notify.mobile_app_konrad
+            notify.mobile_app_smartphone_partner
+            You can also provide a notify group.
+          default: []
+          selector:
+            text:
+              multiple: true
+
+        notification_tag:
+          name: Notification update tag
+          description: >
+            Tag used to update the active notification instead of creating a new
+            one each time. Many mobile app notify services support this.
+          default: "binary_sensor_updating_notification"
+          selector:
+            text:
+
+        notification_title:
+          name: Title
+          description: >
+            Placeholders: [ENTITY] for the sensor name and [COUNT] for the update counter.
+          default: "[ENTITY] active"
+          selector:
+            text:
+
+        notification_message:
+          name: Message
+          description: >
+            Placeholders: [ENTITY] for the sensor name and [COUNT] for the update counter.
+          default: "Update counter: [COUNT]"
+          selector:
+            text:
+              multiline: true
+
+        notification_clear_service:
+          name: Notification clear service
+          description: >
+            Optional additional service that can clear or dismiss the active notification
+            when the sensor turns off. The blueprint also sends the standard mobile app
+            clear_notification command to every configured notify target.
+          default: ""
+          selector:
+            text:
+
+trigger:
+  - platform: state
+    entity_id: !input binary_sensor
+    to: !input on_state
+    id: turned_on
+
+condition: []
+
+action:
+  - variables:
+      sensor_entity: !input binary_sensor
+      on_state_value: !input on_state
+      off_state_value: !input off_state
+      notify_services: !input notify_services
+      notification_tag: !input notification_tag
+      notification_title_raw: !input notification_title
+      notification_message_raw: !input notification_message
+      notification_clear_service: !input notification_clear_service
+      sensor_name: >-
+        {{
+          area_name(sensor_entity)
+          or state_attr(sensor_entity, 'friendly_name')
+          or sensor_entity
+        }}
+      notification_tag_full: "{{ (notification_tag ~ '_' ~ sensor_entity) | replace('.', '_') }}"
+      notification_was_sent: false
+
+  - repeat:
+      while:
+        - condition: template
+          value_template: "{{ is_state(sensor_entity, on_state_value) }}"
+      sequence:
+        - variables:
+            counter: "{{ repeat.index }}"
+            notification_title: >-
+              {{
+                (notification_title_raw | string)
+                | replace('[ENTITY]', sensor_name | string)
+                | replace('[COUNT]', counter | string)
+              }}
+            notification_message: >-
+              {{
+                (notification_message_raw | string)
+                | replace('[ENTITY]', sensor_name | string)
+                | replace('[COUNT]', counter | string)
+              }}
+            notification_was_sent: true
+
+        - repeat:
+            for_each: !input notify_services
+            sequence:
+              - service: "{{ repeat.item }}"
+                data:
+                  title: "{{ notification_title }}"
+                  message: "{{ notification_message }}"
+                  data:
+                    tag: "{{ notification_tag_full }}"
+                    alert_once: true
+
+        - wait_for_trigger:
+            - platform: state
+              entity_id: !input binary_sensor
+              to: !input off_state
+              id: turned_off
+          timeout:
+            seconds: 10
+          continue_on_timeout: true
+
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ notification_was_sent }}"
+        sequence:
+          - repeat:
+              for_each: !input notify_services
+              sequence:
+                - service: "{{ repeat.item }}"
+                  data:
+                    message: clear_notification
+                    data:
+                      tag: "{{ notification_tag_full }}"
+
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ notification_clear_service | length > 0 }}"
+                sequence:
+                  - service: "{{ notification_clear_service }}"
+                    data:
+                      tag: "{{ notification_tag_full }}"
+
+mode: single
+max_exceeded: silent
