@@ -37,16 +37,27 @@ blueprint:
       name: Notifications
       icon: mdi:bell
       input:
-        notify_services:
-          name: Notify targets
+        notify_mobile_app_devices:
+          name: Mobile app notify devices
           description: >
-            List of notify services. All available notify targets are offered by the
-            selector and can be chosen from a single list.
+            Mobile app devices offered by Home Assistant. Notifications are sent
+            through notify.mobile_app_<device_id>.
           default: []
           selector:
-            service:
-              domain:
-                - notify
+            device:
+              integration: mobile_app
+              multiple: true
+
+        notify_services:
+          name: Additional notify services
+          description: >
+            Optional list of notify services or notify groups, e.g.:
+            notify.mobile_app_konrad
+            notify.mobile_app_smartphone_partner
+            notify.family
+          default: []
+          selector:
+            text:
               multiple: true
 
         notification_tag:
@@ -128,6 +139,7 @@ action:
       sensor_entity: !input binary_sensor
       on_state_value: !input on_state
       off_state_value: !input off_state
+      notify_mobile_app_devices: !input notify_mobile_app_devices
       notify_services: !input notify_services
       notification_tag: !input notification_tag
       notification_title_raw: !input notification_title
@@ -152,7 +164,11 @@ action:
           - choose:
               - conditions:
                   - condition: template
-                    value_template: "{{ trigger.event.data.tag == notification_tag_full }}"
+                    value_template: >-
+                      {{
+                        trigger.event.data.get('tag') == notification_tag_full
+                        or trigger.event.data.get('action_data', {}).get('tag') == notification_tag_full
+                      }}
                 sequence:
                   - choose:
                       - conditions:
@@ -204,6 +220,35 @@ action:
                     notification_was_sent: true
 
                 - repeat:
+                    for_each: !input notify_mobile_app_devices
+                    sequence:
+                      - choose:
+                          - conditions:
+                              - condition: template
+                                value_template: "{{ dismissal_helper | length > 0 }}"
+                            sequence:
+                              - service: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                                data:
+                                  title: "{{ notification_title }}"
+                                  message: "{{ notification_message }}"
+                                  data:
+                                    tag: "{{ notification_tag_full }}"
+                                    alert_once: true
+                                    actions:
+                                      - action: "DISMISS_NOTIFICATION"
+                                        title: "{{ dismissal_action_title }}"
+                                        action_data:
+                                          tag: "{{ notification_tag_full }}"
+                          - default:
+                              - service: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                                data:
+                                  title: "{{ notification_title }}"
+                                  message: "{{ notification_message }}"
+                                  data:
+                                    tag: "{{ notification_tag_full }}"
+                                    alert_once: true
+
+                - repeat:
                     for_each: !input notify_services
                     sequence:
                       - choose:
@@ -221,6 +266,8 @@ action:
                                     actions:
                                       - action: "DISMISS_NOTIFICATION"
                                         title: "{{ dismissal_action_title }}"
+                                        action_data:
+                                          tag: "{{ notification_tag_full }}"
                           - default:
                               - service: "{{ repeat.item }}"
                                 data:
@@ -244,6 +291,15 @@ action:
           - condition: template
             value_template: "{{ notification_was_sent }}"
         sequence:
+          - repeat:
+              for_each: !input notify_mobile_app_devices
+              sequence:
+                - service: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                  data:
+                    message: clear_notification
+                    data:
+                      tag: "{{ notification_tag_full }}"
+
           - repeat:
               for_each: !input notify_services
               sequence:
