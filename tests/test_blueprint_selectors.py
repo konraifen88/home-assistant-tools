@@ -88,6 +88,17 @@ def _walk_targets(value):
             yield from _walk_targets(child)
 
 
+def _walk_choose_actions(value):
+    if isinstance(value, dict):
+        if "choose" in value:
+            yield value
+        for child in value.values():
+            yield from _walk_choose_actions(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _walk_choose_actions(child)
+
+
 def _collect_input_defaults(value):
     defaults = {}
     if isinstance(value, dict):
@@ -137,6 +148,25 @@ class BlueprintSelectorTest(unittest.TestCase):
                         empty_default_inputs,
                         f"{blueprint_path.name} uses optional input {entity_id!r} directly in target.entity_id",
                     )
+
+    def test_choose_entries_have_conditions_and_sequence(self):
+        for blueprint_path in BLUEPRINT_DIR.glob("*_blueprint.yaml"):
+            with self.subTest(blueprint=blueprint_path.name):
+                blueprint = yaml.load(
+                    blueprint_path.read_text(encoding="utf-8"),
+                    Loader=BlueprintLoader,
+                )
+
+                for choose_action in _walk_choose_actions(blueprint):
+                    self.assertIsInstance(choose_action["choose"], list)
+                    for branch in choose_action["choose"]:
+                        self.assertNotIn(
+                            "default",
+                            branch,
+                            f"{blueprint_path.name} places default inside a choose branch",
+                        )
+                        self.assertIn("conditions", branch)
+                        self.assertIn("sequence", branch)
 
 
 if __name__ == "__main__":

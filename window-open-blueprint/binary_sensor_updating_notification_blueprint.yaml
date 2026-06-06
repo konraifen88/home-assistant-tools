@@ -190,101 +190,101 @@ action:
                   - service: input_boolean.turn_off
                     target:
                       entity_id: "{{ dismissal_helper }}"
-      - default:
-          - choose:
-              - conditions:
-                  - condition: template
-                    value_template: >-
-                      {{ dismissal_helper | length > 0 and is_state(dismissal_helper, 'on') }}
+    default:
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: >-
+                  {{ dismissal_helper | length > 0 and is_state(dismissal_helper, 'on') }}
+            sequence:
+              - stop: "Notification dismissed until trigger entity turns off"
+      - repeat:
+          while:
+            - condition: template
+              value_template: "{{ is_state(sensor_entity, on_state_value) }}"
+          sequence:
+            - variables:
+                counter: "{{ repeat.index }}"
+                notification_title: >-
+                  {{
+                    (notification_title_raw | string)
+                    | replace('[ENTITY]', sensor_name | string)
+                    | replace('[COUNT]', counter | string)
+                  }}
+                notification_message: >-
+                  {{
+                    (notification_message_raw | string)
+                    | replace('[ENTITY]', sensor_name | string)
+                    | replace('[COUNT]', counter | string)
+                  }}
+                notification_was_sent: true
+
+            - repeat:
+                for_each: !input notify_mobile_app_devices
                 sequence:
-                  - stop
-          - repeat:
-              while:
-                - condition: template
-                  value_template: "{{ is_state(sensor_entity, on_state_value) }}"
-              sequence:
-                - variables:
-                    counter: "{{ repeat.index }}"
-                    notification_title: >-
-                      {{
-                        (notification_title_raw | string)
-                        | replace('[ENTITY]', sensor_name | string)
-                        | replace('[COUNT]', counter | string)
-                      }}
-                    notification_message: >-
-                      {{
-                        (notification_message_raw | string)
-                        | replace('[ENTITY]', sensor_name | string)
-                        | replace('[COUNT]', counter | string)
-                      }}
-                    notification_was_sent: true
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ dismissal_helper | length > 0 }}"
+                        sequence:
+                          - service: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                            data:
+                              title: "{{ notification_title }}"
+                              message: "{{ notification_message }}"
+                              data:
+                                tag: "{{ notification_tag_full }}"
+                                alert_once: true
+                                actions:
+                                  - action: "DISMISS_NOTIFICATION"
+                                    title: "{{ dismissal_action_title }}"
+                                    action_data:
+                                      tag: "{{ notification_tag_full }}"
+                    default:
+                      - service: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                        data:
+                          title: "{{ notification_title }}"
+                          message: "{{ notification_message }}"
+                          data:
+                            tag: "{{ notification_tag_full }}"
+                            alert_once: true
 
-                - repeat:
-                    for_each: !input notify_mobile_app_devices
-                    sequence:
-                      - choose:
-                          - conditions:
-                              - condition: template
-                                value_template: "{{ dismissal_helper | length > 0 }}"
-                            sequence:
-                              - service: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
-                                data:
-                                  title: "{{ notification_title }}"
-                                  message: "{{ notification_message }}"
-                                  data:
-                                    tag: "{{ notification_tag_full }}"
-                                    alert_once: true
-                                    actions:
-                                      - action: "DISMISS_NOTIFICATION"
-                                        title: "{{ dismissal_action_title }}"
-                                        action_data:
-                                          tag: "{{ notification_tag_full }}"
-                          - default:
-                              - service: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
-                                data:
-                                  title: "{{ notification_title }}"
-                                  message: "{{ notification_message }}"
-                                  data:
-                                    tag: "{{ notification_tag_full }}"
-                                    alert_once: true
+            - repeat:
+                for_each: !input notify_services
+                sequence:
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ dismissal_helper | length > 0 }}"
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              title: "{{ notification_title }}"
+                              message: "{{ notification_message }}"
+                              data:
+                                tag: "{{ notification_tag_full }}"
+                                alert_once: true
+                                actions:
+                                  - action: "DISMISS_NOTIFICATION"
+                                    title: "{{ dismissal_action_title }}"
+                                    action_data:
+                                      tag: "{{ notification_tag_full }}"
+                    default:
+                      - service: "{{ repeat.item }}"
+                        data:
+                          title: "{{ notification_title }}"
+                          message: "{{ notification_message }}"
+                          data:
+                            tag: "{{ notification_tag_full }}"
+                            alert_once: true
 
-                - repeat:
-                    for_each: !input notify_services
-                    sequence:
-                      - choose:
-                          - conditions:
-                              - condition: template
-                                value_template: "{{ dismissal_helper | length > 0 }}"
-                            sequence:
-                              - service: "{{ repeat.item }}"
-                                data:
-                                  title: "{{ notification_title }}"
-                                  message: "{{ notification_message }}"
-                                  data:
-                                    tag: "{{ notification_tag_full }}"
-                                    alert_once: true
-                                    actions:
-                                      - action: "DISMISS_NOTIFICATION"
-                                        title: "{{ dismissal_action_title }}"
-                                        action_data:
-                                          tag: "{{ notification_tag_full }}"
-                          - default:
-                              - service: "{{ repeat.item }}"
-                                data:
-                                  title: "{{ notification_title }}"
-                                  message: "{{ notification_message }}"
-                                  data:
-                                    tag: "{{ notification_tag_full }}"
-                                    alert_once: true
-
-                - wait_for_trigger:
-                    - platform: state
-                      entity_id: !input binary_sensor
-                      to: !input off_state
-                      id: turned_off
-                  timeout:
-                    seconds: 10
-                  continue_on_timeout: true
+            - wait_for_trigger:
+                - platform: state
+                  entity_id: !input binary_sensor
+                  to: !input off_state
+                  id: turned_off
+              timeout:
+                seconds: 10
+              continue_on_timeout: true
 
   - choose:
       - conditions:
