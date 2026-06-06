@@ -116,6 +116,17 @@ blueprint:
               domain:
                 - input_boolean
 
+        dismissed_targets_helper:
+          name: Dismissed targets helper
+          description: >
+            Optional input_text helper used to remember which notify targets have
+            dismissed the current notification while the trigger entity stays on.
+          default: ""
+          selector:
+            entity:
+              domain:
+                - input_text
+
 trigger:
   - platform: state
     entity_id: !input binary_sensor
@@ -136,6 +147,7 @@ action:
       notification_message_raw: !input notification_message
       notification_clear_service: !input notification_clear_service
       dismissal_action_title: !input dismissal_action_title
+      dismissed_targets_helper: !input dismissed_targets_helper
       sensor_name: >-
         {{
           area_name(sensor_entity)
@@ -144,17 +156,28 @@ action:
         }}
       notification_tag_full: "{{ (notification_tag ~ '_' ~ sensor_entity) | replace('.', '_') }}"
       notification_targets: >-
-        {%- set ns = namespace(targets=[]) -%}
-        {%- for device_id in notify_mobile_app_devices -%}
-          {%- set service = 'notify.mobile_app_' ~ (device_attr(device_id, 'name') | slugify) -%}
-          {%- set ns.targets = ns.targets + [dict(service=service, device_id=device_id)] -%}
-        {%- endfor -%}
-        {%- for service in notify_services -%}
-          {%- set ns.targets = ns.targets + [dict(service=service, device_id='')] -%}
-        {%- endfor -%}
-        {{ ns.targets }}
+          {%- set ns = namespace(targets=[]) -%}
+          {%- for device_id in notify_mobile_app_devices -%}
+            {%- set service = 'notify.mobile_app_' ~ (device_attr(device_id, 'name') | slugify) -%}
+            {%- set ns.targets = ns.targets + [dict(service=service, device_id=device_id)] -%}
+          {%- endfor -%}
+          {%- for service in notify_services -%}
+            {%- set ns.targets = ns.targets + [dict(service=service | trim, device_id='')] -%}
+          {%- endfor -%}
+          {{ ns.targets }}
       dismissed_services: []
       notification_was_sent: false
+
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ dismissed_targets_helper | length > 0 }}"
+        sequence:
+          - service: input_text.set_value
+            target:
+              entity_id: "{{ dismissed_targets_helper }}"
+            data:
+              value: ""
 
   - repeat:
       while:
@@ -163,6 +186,15 @@ action:
       sequence:
         - variables:
             counter: "{{ repeat.index }}"
+            dismissed_services: >-
+              {{
+                states(dismissed_targets_helper).split(',')
+                | map('trim')
+                | reject('eq', '')
+                | list
+                if dismissed_targets_helper | length > 0
+                else []
+              }}
             notification_title: >-
               {{
                 (notification_title_raw | string)
@@ -183,9 +215,9 @@ action:
               - choose:
                   - conditions:
                       - condition: template
-                        value_template: "{{ repeat.item.service not in dismissed_services }}"
+                        value_template: "{{ repeat.item.service | trim not in dismissed_services }}"
                     sequence:
-                      - service: "{{ repeat.item.service }}"
+                      - service: "{{ repeat.item.service | trim }}"
                         data:
                           title: "{{ notification_title }}"
                           message: "{{ notification_message }}"
@@ -197,7 +229,7 @@ action:
                                 title: "{{ dismissal_action_title }}"
                                 action_data:
                                   tag: "{{ notification_tag_full }}"
-                                  notify_service: "{{ repeat.item.service }}"
+                                  notify_service: "{{ repeat.item.service | trim }}"
 
         - wait_for_trigger:
             - platform: state
@@ -222,9 +254,9 @@ action:
                 {%- set data = wait.trigger.event.data -%}
                 {%- set action_data = data.get('action_data', {}) -%}
                 {%- if action_data.get('notify_service') -%}
-                  {{ action_data.get('notify_service') }}
+                  {{ action_data.get('notify_service') | trim }}
                 {%- elif data.get('notify_service') -%}
-                  {{ data.get('notify_service') }}
+                  {{ data.get('notify_service') | trim }}
                 {%- elif data.get('device_id') -%}
                   {%- set ns = namespace(service='') -%}
                   {%- for target in notification_targets -%}
@@ -232,7 +264,7 @@ action:
                       {%- set ns.service = target.service -%}
                     {%- endif -%}
                   {%- endfor -%}
-                  {{ ns.service }}
+                        {{ ns.service | trim }}
                 {%- else -%}
                   {{ '' }}
                 {%- endif -%}
@@ -254,11 +286,26 @@ action:
                 - condition: template
                   value_template: "{{ dismissed_service | length > 0 }}"
               sequence:
-                - service: "{{ dismissed_service }}"
+                - service: "{{ dismissed_service | trim }}"
                   data:
                     message: clear_notification
                     data:
                       tag: "{{ notification_tag_full }}"
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ dismissed_targets_helper | length > 0 }}"
+                      sequence:
+                        - service: input_text.set_value
+                          target:
+                            entity_id: "{{ dismissed_targets_helper }}"
+                          data:
+                            value: "{{ dismissed_services_next | map('trim') | join(',') }}"
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ dismissed_targets_helper | length == 0 }}"
+                      sequence:
+                        - stop: "Notification dismissed until trigger entity turns off"
 
                 - choose:
                     - conditions:
@@ -286,7 +333,7 @@ action:
           - repeat:
               for_each: "{{ notification_targets }}"
               sequence:
-                - service: "{{ repeat.item.service }}"
+                - service: "{{ repeat.item.service | trim }}"
                   data:
                     message: clear_notification
                     data:
@@ -300,6 +347,17 @@ action:
                   - service: "{{ notification_clear_service }}"
                     data:
                       tag: "{{ notification_tag_full }}"
+
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ dismissed_targets_helper | length > 0 }}"
+                sequence:
+                  - service: input_text.set_value
+                    target:
+                      entity_id: "{{ dismissed_targets_helper }}"
+                    data:
+                      value: ""
 
 mode: parallel
 max_exceeded: silent
