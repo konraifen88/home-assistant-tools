@@ -216,64 +216,67 @@ action:
             seconds: 10
           continue_on_timeout: true
 
+        - variables:
+            dismissed_service: >-
+              {%- if wait.trigger is not none and wait.trigger.event is defined -%}
+                {%- set data = wait.trigger.event.data -%}
+                {%- set action_data = data.get('action_data', {}) -%}
+                {%- if action_data.get('notify_service') -%}
+                  {{ action_data.get('notify_service') }}
+                {%- elif data.get('notify_service') -%}
+                  {{ data.get('notify_service') }}
+                {%- elif data.get('device_id') -%}
+                  {%- set ns = namespace(service='') -%}
+                  {%- for target in notification_targets -%}
+                    {%- if target.device_id == data.get('device_id') -%}
+                      {%- set ns.service = target.service -%}
+                    {%- endif -%}
+                  {%- endfor -%}
+                  {{ ns.service }}
+                {%- else -%}
+                  {{ '' }}
+                {%- endif -%}
+              {%- else -%}
+                {{ '' }}
+              {%- endif -%}
+            dismissed_services_next: >-
+              {{
+                (dismissed_services + [dismissed_service]) | unique | list
+                if dismissed_service | length > 0
+                else dismissed_services
+              }}
+
+        - variables:
+            dismissed_services: "{{ dismissed_services_next }}"
+
         - choose:
             - conditions:
                 - condition: template
-                  value_template: >-
-                    {{
-                      wait.trigger is not none
-                      and wait.trigger.event is defined
-                      and wait.trigger.event.event_type in ['mobile_app_notification_action', 'mobile_app_notification_cleared']
-                      and (
-                        wait.trigger.event.data.get('tag') == notification_tag_full
-                        or wait.trigger.event.data.get('action_data', {}).get('tag') == notification_tag_full
-                        or wait.trigger.event.data.get('action_1_key') == 'DISMISS_NOTIFICATION'
-                      )
-                    }}
+                  value_template: "{{ dismissed_service | length > 0 }}"
               sequence:
-                - variables:
-                    dismissed_service: >-
-                      {%- set data = wait.trigger.event.data -%}
-                      {%- set action_data = data.get('action_data', {}) -%}
-                      {%- if action_data.get('notify_service') -%}
-                        {{ action_data.get('notify_service') }}
-                      {%- elif data.get('notify_service') -%}
-                        {{ data.get('notify_service') }}
-                      {%- elif data.get('device_id') -%}
-                        {%- set ns = namespace(service='') -%}
-                        {%- for target in notification_targets -%}
-                          {%- if target.device_id == data.get('device_id') -%}
-                            {%- set ns.service = target.service -%}
-                          {%- endif -%}
-                        {%- endfor -%}
-                        {{ ns.service }}
-                      {%- else -%}
-                        {{ '' }}
-                      {%- endif -%}
-
-                - choose:
-                    - conditions:
-                        - condition: template
-                          value_template: "{{ dismissed_service | length > 0 }}"
-                      sequence:
-                        - variables:
-                            dismissed_services: "{{ (dismissed_services + [dismissed_service]) | unique | list }}"
-                        - service: "{{ dismissed_service }}"
-                          data:
-                            message: clear_notification
-                            data:
-                              tag: "{{ notification_tag_full }}"
+                - service: "{{ dismissed_service }}"
+                  data:
+                    message: clear_notification
+                    data:
+                      tag: "{{ notification_tag_full }}"
 
                 - choose:
                     - conditions:
                         - condition: template
                           value_template: >-
-                            {{
-                              (dismissed_services + [dismissed_service]) | unique | list | length
-                              >= notification_targets | length
-                            }}
+                            {{ dismissed_services_next | length >= notification_targets | length }}
                       sequence:
                         - stop: "All notification targets dismissed until trigger entity turns off"
+            - conditions:
+                - condition: template
+                  value_template: >-
+                    {{
+                      wait.trigger is not none
+                      and wait.trigger.id in ['notification_dismissed', 'notification_cleared']
+                    }}
+              sequence:
+                - delay:
+                    seconds: 10
 
   - choose:
       - conditions:
