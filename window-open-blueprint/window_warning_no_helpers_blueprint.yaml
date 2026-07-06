@@ -337,7 +337,7 @@ action:
           or window_entity
         }}
 
-      start_ts: "{{ as_timestamp(now()) }}"
+      start_ts: "{{ as_timestamp(now()) | float }}"
       start_temp: >-
         {{ states(inside_temp_entity) | float(0)
            if states(inside_temp_entity) | is_number
@@ -401,7 +401,7 @@ action:
               {% else %}
                 {{ none }}
               {% endif %}
-            open_minutes: "{{ ((as_timestamp(now()) - start_ts | float(0)) / 60) | round(1) }}"
+            open_minutes: "{{ ((as_timestamp(now()) | float - (start_ts | float(0))) / 60.0) | round(1) }}"
             cooling: >-
               {% if start_temp is not none and min_temp is not none %}
                 {{ (start_temp | float(0) - min_temp | float(0)) | round(1) }}
