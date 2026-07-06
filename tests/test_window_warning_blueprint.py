@@ -235,6 +235,46 @@ class WindowWarningBlueprintTest(unittest.TestCase):
 
         self.assertFalse(render_bool(template, context))
 
+    def test_winter_warning_resets_when_temp_recovers(self):
+        """warning_reason resets to 'none' when temp rises above threshold."""
+        template = self.reason_choose[3]["conditions"][0]["value_template"]
+        context = base_context(
+            warning_reason="winter",
+            current_temp_raw=18.5,
+            winter_temp_threshold=18.0,
+        )
+        self.assertTrue(render_bool(template, context))
+
+    def test_winter_warning_does_not_reset_when_still_cold(self):
+        """warning_reason stays 'winter' when temp is still at or below threshold."""
+        template = self.reason_choose[3]["conditions"][0]["value_template"]
+        context = base_context(
+            warning_reason="winter",
+            current_temp_raw=17.5,
+            winter_temp_threshold=18.0,
+        )
+        self.assertFalse(render_bool(template, context))
+
+    def test_summer_warning_resets_when_rise_drops(self):
+        """warning_reason resets to 'none' when rise_from_min drops below threshold."""
+        template = self.reason_choose[4]["conditions"][0]["value_template"]
+        context = base_context(
+            warning_reason="summer",
+            rise_from_min=0.3,
+            summer_rise_from_min=0.5,
+        )
+        self.assertTrue(render_bool(template, context))
+
+    def test_summer_warning_does_not_reset_when_still_rising(self):
+        """warning_reason stays 'summer' when rise_from_min is still above threshold."""
+        template = self.reason_choose[4]["conditions"][0]["value_template"]
+        context = base_context(
+            warning_reason="summer",
+            rise_from_min=0.6,
+            summer_rise_from_min=0.5,
+        )
+        self.assertFalse(render_bool(template, context))
+
 
 def base_context(**overrides):
     context = {

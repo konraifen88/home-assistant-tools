@@ -468,6 +468,31 @@ action:
                 - variables:
                     warning_reason: "open_too_long"
 
+            - conditions:
+                - condition: template
+                  value_template: >-
+                    {{
+                      warning_reason == 'winter'
+                      and current_temp_raw is not none
+                      and current_temp_raw | float > winter_temp_threshold | float
+                    }}
+              sequence:
+                - variables:
+                    warning_reason: "none"
+                    notification_sent: false
+
+            - conditions:
+                - condition: template
+                  value_template: >-
+                    {{
+                      warning_reason == 'summer'
+                      and rise_from_min | float < summer_rise_from_min | float
+                    }}
+              sequence:
+                - variables:
+                    warning_reason: "none"
+                    notification_sent: false
+
         - variables:
             notification_title: >-
               {% if warning_reason == 'winter' %}
