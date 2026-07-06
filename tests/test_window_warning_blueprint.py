@@ -222,6 +222,19 @@ class WindowWarningBlueprintTest(unittest.TestCase):
             template = choose_branch["conditions"][0]["value_template"]
             self.assertFalse(render_bool(template, context, states=states))
 
+    def test_winter_warning_does_not_trigger_when_indoor_temp_unavailable(self):
+        """When inside_temp_entity reports unavailable/unknown, current_temp_raw is none
+        and the winter warning must not fire."""
+        template = self.reason_choose[0]["conditions"][0]["value_template"]
+        context = base_context(
+            warning_reason="none",
+            winter_enabled=True,
+            current_temp_raw=None,
+            winter_temp_threshold=18.0,
+        )
+
+        self.assertFalse(render_bool(template, context))
+
 
 def base_context(**overrides):
     context = {

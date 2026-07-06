@@ -338,8 +338,14 @@ action:
         }}
 
       start_ts: "{{ as_timestamp(now()) }}"
-      start_temp: "{{ states(inside_temp_entity) | float(0) }}"
-      min_temp: "{{ states(inside_temp_entity) | float(0) }}"
+      start_temp: >-
+        {{ states(inside_temp_entity) | float(0)
+           if states(inside_temp_entity) | is_number
+           else none }}
+      min_temp: >-
+        {{ states(inside_temp_entity) | float(0)
+           if states(inside_temp_entity) | is_number
+           else none }}
       open_minutes: 0.0
       inside_temp: 0.0
       outside_temp: null
@@ -373,9 +379,22 @@ action:
           continue_on_timeout: true
 
         - variables:
-            current_temp_raw: "{{ states(inside_temp_entity) | float(0) }}"
-            min_temp: "{{ [min_temp | float(0), current_temp_raw | float(0)] | min }}"
-            inside_temp: "{{ current_temp_raw | float(0) | round(1) }}"
+            current_temp_raw: >-
+              {{ states(inside_temp_entity) | float(0)
+                 if states(inside_temp_entity) | is_number
+                 else none }}
+            min_temp: >-
+              {% if current_temp_raw is not none and min_temp is not none %}
+                {{ [min_temp | float(0), current_temp_raw | float(0)] | min }}
+              {% elif current_temp_raw is not none %}
+                {{ current_temp_raw | float(0) }}
+              {% else %}
+                {{ min_temp }}
+              {% endif %}
+            inside_temp: >-
+              {{ current_temp_raw | float(0) | round(1)
+                 if current_temp_raw is not none
+                 else none }}
             outside_temp: >-
               {% if outside_temp_entity | length > 0 and states(outside_temp_entity) | is_number %}
                 {{ states(outside_temp_entity) | float | round(1) }}
@@ -383,8 +402,18 @@ action:
                 {{ none }}
               {% endif %}
             open_minutes: "{{ ((as_timestamp(now()) - start_ts | float(0)) / 60) | round(1) }}"
-            cooling: "{{ (start_temp | float(0) - min_temp | float(0)) | round(1) }}"
-            rise_from_min: "{{ (current_temp_raw | float(0) - min_temp | float(0)) | round(1) }}"
+            cooling: >-
+              {% if start_temp is not none and min_temp is not none %}
+                {{ (start_temp | float(0) - min_temp | float(0)) | round(1) }}
+              {% else %}
+                {{ 0.0 }}
+              {% endif %}
+            rise_from_min: >-
+              {% if current_temp_raw is not none and min_temp is not none %}
+                {{ (current_temp_raw | float(0) - min_temp | float(0)) | round(1) }}
+              {% else %}
+                {{ 0.0 }}
+              {% endif %}
             outside_guard_ok: >-
               {{
                 not summer_outside_guard_enabled
@@ -403,6 +432,7 @@ action:
                       is_state(window_entity, open_state_value)
                       and warning_reason == 'none'
                       and winter_enabled
+                      and current_temp_raw is not none
                       and current_temp_raw | float <= winter_temp_threshold | float
                     }}
               sequence:
