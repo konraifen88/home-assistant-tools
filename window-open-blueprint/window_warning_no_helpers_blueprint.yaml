@@ -11,8 +11,9 @@ blueprint:
     stored only while the window is open and the monitoring run is active. This transient state
     is lost on Home Assistant restart or when automations are reloaded.
 
-    Notifications are sent to a list of notify services. Additional actions (KNX, TTS, scripts,
-    etc.) can be attached per trigger.
+    Notifications are sent to mobile app devices and/or additional notify services.
+    Each notification includes a dismiss action button. Dismissing stops updates for
+    that specific target until the window is closed.
   domain: automation
   author: Konrad Gruener
 
@@ -79,13 +80,24 @@ blueprint:
       name: Notifications
       icon: mdi:bell
       input:
-        notify_services:
-          name: Notify targets
+        notify_mobile_app_devices:
+          name: Mobile app notify devices
           description: >
-            List of notify services, e.g.:
+            Mobile app devices offered by Home Assistant. Notifications are sent
+            through notify.mobile_app_<device_id>.
+          default: []
+          selector:
+            device:
+              integration: mobile_app
+              multiple: true
+
+        notify_services:
+          name: Additional notify services
+          description: >
+            Optional list of notify services or notify groups, e.g.:
             notify.mobile_app_konrad
             notify.mobile_app_smartphone_partner
-            You can also provide a notify group such as notify.window_warning.
+            notify.family
           default: []
           selector:
             text:
@@ -94,7 +106,7 @@ blueprint:
         notification_tag:
           name: Notification update tag
           description: >
-            Optional tag used to update the active notification instead of creating
+            Tag used to update the active notification instead of creating
             a new one each time. Many mobile app notify services support this.
           default: "window_warning"
           selector:
@@ -109,6 +121,26 @@ blueprint:
           default: ""
           selector:
             text:
+
+        dismissal_action_title:
+          name: Dismiss action label
+          description: >
+            Action button label. Tapping this button stops further updates for
+            that device until the window is closed.
+          default: "Dismiss"
+          selector:
+            text:
+
+        dismissed_targets_helper:
+          name: Dismissed targets helper
+          description: >
+            Optional input_text helper used to remember which notify targets have
+            dismissed the current notification while the window stays open.
+          default: ""
+          selector:
+            entity:
+              domain:
+                - input_text
 
     open_too_long_settings:
       name: "Condition: Window open too long"
@@ -304,11 +336,14 @@ action:
       outside_temp_entity: !input outside_temp_sensor
       open_state_value: !input open_state
       closed_state_value: !input closed_state
+      notify_mobile_app_devices: !input notify_mobile_app_devices
       notify_services: !input notify_services
 
       check_interval_minutes: !input check_interval_minutes
       notification_tag: !input notification_tag
       notification_clear_service: !input notification_clear_service
+      dismissal_action_title: !input dismissal_action_title
+      dismissed_targets_helper: !input dismissed_targets_helper
 
       open_too_long_enabled: !input open_too_long_enabled
       open_too_long_minutes: !input open_too_long_minutes
@@ -356,6 +391,28 @@ action:
       warning_reason: "none"
       notification_sent: false
       notification_tag_full: "{{ (notification_tag ~ '_' ~ window_entity) | replace('.', '_') }}"
+      notification_targets: >-
+        {%- set ns = namespace(targets=[]) -%}
+        {%- for device_id in notify_mobile_app_devices -%}
+          {%- set service = 'notify.mobile_app_' ~ (device_attr(device_id, 'name') | slugify) -%}
+          {%- set ns.targets = ns.targets + [dict(service=service, device_id=device_id)] -%}
+        {%- endfor -%}
+        {%- for service in notify_services -%}
+          {%- set ns.targets = ns.targets + [dict(service=service | trim, device_id='')] -%}
+        {%- endfor -%}
+        {{ ns.targets }}
+      dismissed_services: []
+
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ dismissed_targets_helper | length > 0 }}"
+        sequence:
+          - service: input_text.set_value
+            target:
+              entity_id: "{{ dismissed_targets_helper }}"
+            data:
+              value: ""
 
   - repeat:
       while:
@@ -374,6 +431,16 @@ action:
             - platform: state
               entity_id: !input inside_temp_sensor
               id: temperature_changed
+
+            - platform: event
+              event_type: mobile_app_notification_action
+              event_data:
+                action: "DISMISS_NOTIFICATION"
+              id: notification_dismissed
+
+            - platform: event
+              event_type: mobile_app_notification_cleared
+              id: notification_cleared
           timeout:
             minutes: !input check_interval_minutes
           continue_on_timeout: true
@@ -422,6 +489,15 @@ action:
                   and states(outside_temp_entity) | is_number
                   and states(outside_temp_entity) | float >= current_temp_raw | float - summer_outside_margin | float
                 )
+              }}
+            dismissed_services: >-
+              {{
+                states(dismissed_targets_helper).split(',')
+                | map('trim')
+                | reject('eq', '')
+                | list
+                if dismissed_targets_helper | length > 0
+                else dismissed_services
               }}
 
         - choose:
@@ -516,16 +592,27 @@ action:
                     {{ warning_reason != 'none' }}
               sequence:
                 - repeat:
-                    for_each: !input notify_services
+                    for_each: "{{ notification_targets }}"
                     sequence:
-                      - service: "{{ repeat.item }}"
-                        data:
-                          title: "{{ notification_title }}"
-                          message: >-
-                            {{ notification_message if notification_message is not none and notification_message | string | trim != '' else (notification_title if notification_title is not none and notification_title | string | trim != '' else area) }}
-                          data:
-                            tag: "{{ notification_tag_full }}"
-                            alert_once: true
+                      - choose:
+                          - conditions:
+                              - condition: template
+                                value_template: "{{ repeat.item.service | trim not in dismissed_services }}"
+                            sequence:
+                              - service: "{{ repeat.item.service | trim }}"
+                                data:
+                                  title: "{{ notification_title }}"
+                                  message: >-
+                                    {{ notification_message if notification_message is not none and notification_message | string | trim != '' else (notification_title if notification_title is not none and notification_title | string | trim != '' else area) }}
+                                  data:
+                                    tag: "{{ notification_tag_full }}"
+                                    alert_once: true
+                                    actions:
+                                      - action: "DISMISS_NOTIFICATION"
+                                        title: "{{ dismissal_action_title }}"
+                                        action_data:
+                                          tag: "{{ notification_tag_full }}"
+                                          notify_service: "{{ repeat.item.service | trim }}"
 
                 - choose:
                     - conditions:
@@ -567,6 +654,69 @@ action:
                         - variables:
                             notification_sent: true
 
+        # Handle dismiss events
+        - variables:
+            dismissed_service: >-
+              {%- if wait.trigger is not none and wait.trigger.event is defined -%}
+                {%- set data = wait.trigger.event.data -%}
+                {%- set action_data = data.get('action_data', {}) -%}
+                {%- if action_data.get('notify_service') -%}
+                  {{ action_data.get('notify_service') | trim }}
+                {%- elif data.get('notify_service') -%}
+                  {{ data.get('notify_service') | trim }}
+                {%- elif data.get('device_id') -%}
+                  {%- set ns = namespace(service='') -%}
+                  {%- for target in notification_targets -%}
+                    {%- if target.device_id == data.get('device_id') -%}
+                      {%- set ns.service = target.service -%}
+                    {%- endif -%}
+                  {%- endfor -%}
+                  {{ ns.service | trim }}
+                {%- else -%}
+                  {{ '' }}
+                {%- endif -%}
+              {%- else -%}
+                {{ '' }}
+              {%- endif -%}
+            dismissed_services_next: >-
+              {{
+                (dismissed_services + [dismissed_service]) | unique | list
+                if dismissed_service | length > 0
+                else dismissed_services
+              }}
+
+        - variables:
+            dismissed_services: "{{ dismissed_services_next }}"
+
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: "{{ dismissed_service | length > 0 }}"
+              sequence:
+                - service: "{{ dismissed_service | trim }}"
+                  data:
+                    message: clear_notification
+                    data:
+                      tag: "{{ notification_tag_full }}"
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ dismissed_targets_helper | length > 0 }}"
+                      sequence:
+                        - service: input_text.set_value
+                          target:
+                            entity_id: "{{ dismissed_targets_helper }}"
+                          data:
+                            value: "{{ dismissed_services_next | map('trim') | join(',') }}"
+
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: >-
+                            {{ dismissed_services_next | length >= notification_targets | length }}
+                      sequence:
+                        - stop: "All notification targets dismissed until window is closed"
+
   - choose:
       - conditions:
           - condition: template
@@ -574,9 +724,9 @@ action:
               {{ warning_reason != 'none' }}
         sequence:
           - repeat:
-              for_each: !input notify_services
+              for_each: "{{ notification_targets }}"
               sequence:
-                - service: "{{ repeat.item }}"
+                - service: "{{ repeat.item.service | trim }}"
                   data:
                     message: clear_notification
                     data:
@@ -591,6 +741,17 @@ action:
                   - service: "{{ notification_clear_service }}"
                     data:
                       tag: "{{ notification_tag_full }}"
+
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ dismissed_targets_helper | length > 0 }}"
+                sequence:
+                  - service: input_text.set_value
+                    target:
+                      entity_id: "{{ dismissed_targets_helper }}"
+                    data:
+                      value: ""
 
 mode: single
 max_exceeded: silent

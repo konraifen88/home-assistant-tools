@@ -72,19 +72,61 @@ def render_string(template, context, states=None):
 class WindowWarningBlueprintTest(unittest.TestCase):
     def setUp(self):
         self.blueprint = load_blueprint()
-        repeat_sequence = self.blueprint["action"][1]["repeat"]["sequence"]
+        # action[0] = variables, action[1] = dismiss helper reset choose,
+        # action[2] = repeat loop, action[3] = clear on close choose
+        repeat_sequence = self.blueprint["action"][2]["repeat"]["sequence"]
+        # [0] wait_for_trigger, [1] variables (temps), [2] choose (reason),
+        # [3] variables (title/msg), [4] choose (notification sending),
+        # [5] variables (dismissed_service), [6] variables (dismissed_services),
+        # [7] choose (handle dismiss)
         self.reason_choose = repeat_sequence[2]["choose"]
         self.notification_variables = repeat_sequence[3]["variables"]
-        self.notification_action = repeat_sequence[4]["choose"][0]["sequence"][0][
-            "repeat"
-        ]["sequence"][0]
-        self.clear_action = self.blueprint["action"][2]["choose"][0]
+        # notification sending: choose[0].sequence[0] = repeat for_each notification_targets
+        self.notification_repeat = repeat_sequence[4]["choose"][0]["sequence"][0]["repeat"]
+        # Inside the repeat, there's a choose (skip dismissed) -> sequence[0] = service call
+        self.notification_action = self.notification_repeat["sequence"][0]["choose"][0][
+            "sequence"
+        ][0]
+        self.dismiss_variables = repeat_sequence[5]["variables"]
+        self.dismiss_choose = repeat_sequence[7]["choose"]
+        self.clear_action = self.blueprint["action"][3]["choose"][0]
+
+    def test_notification_targets_input_uses_device_selector(self):
+        """notify_mobile_app_devices uses device selector with mobile_app integration."""
+        notification_inputs = self.blueprint["blueprint"]["input"]["notification_settings"]["input"]
+        device_input = notification_inputs["notify_mobile_app_devices"]
+
+        self.assertEqual(device_input["selector"]["device"]["integration"], "mobile_app")
+        self.assertTrue(device_input["selector"]["device"]["multiple"])
 
     def test_notification_updates_reuse_tag_and_alert_once(self):
         notify_data = self.notification_action["data"]["data"]
 
         self.assertEqual(notify_data["tag"], "{{ notification_tag_full }}")
         self.assertIs(notify_data["alert_once"], True)
+
+    def test_notification_includes_dismiss_action_button(self):
+        """Notification data includes an action button for dismissing."""
+        notify_data = self.notification_action["data"]["data"]
+
+        self.assertIn("actions", notify_data)
+        action = notify_data["actions"][0]
+        self.assertEqual(action["action"], "DISMISS_NOTIFICATION")
+        self.assertEqual(action["title"], "{{ dismissal_action_title }}")
+        self.assertIn("action_data", action)
+        self.assertEqual(action["action_data"]["tag"], "{{ notification_tag_full }}")
+        self.assertEqual(
+            action["action_data"]["notify_service"],
+            "{{ repeat.item.service | trim }}",
+        )
+
+    def test_notification_skips_dismissed_services(self):
+        """The notification repeat skips targets that are in dismissed_services."""
+        skip_condition = self.notification_repeat["sequence"][0]["choose"][0]
+        template = skip_condition["conditions"][0]["value_template"]
+
+        self.assertIn("dismissed_services", template)
+        self.assertIn("repeat.item.service", template)
 
     def test_notification_message_uses_configured_blueprint_messages(self):
         template = self.notification_variables["notification_message"]
@@ -148,6 +190,9 @@ class WindowWarningBlueprintTest(unittest.TestCase):
 
     def test_closing_window_clears_tagged_mobile_app_notifications(self):
         clear_sequence = self.clear_action["sequence"]
+        # [0] = repeat for_each notification_targets (clear each),
+        # [1] = choose (optional clear service),
+        # [2] = choose (reset dismissed_targets_helper)
         notify_clear = clear_sequence[0]["repeat"]["sequence"][0]
         optional_clear = clear_sequence[1]["choose"][0]["sequence"][0]
 
@@ -155,11 +200,54 @@ class WindowWarningBlueprintTest(unittest.TestCase):
             self.clear_action["conditions"][0]["value_template"].strip(),
             "{{ warning_reason != 'none' }}",
         )
-        self.assertEqual(notify_clear["service"], "{{ repeat.item }}")
+        self.assertEqual(notify_clear["service"], "{{ repeat.item.service | trim }}")
         self.assertEqual(notify_clear["data"]["message"], "clear_notification")
         self.assertEqual(notify_clear["data"]["data"]["tag"], "{{ notification_tag_full }}")
         self.assertEqual(optional_clear["service"], "{{ notification_clear_service }}")
         self.assertEqual(optional_clear["data"]["tag"], "{{ notification_tag_full }}")
+
+    def test_closing_window_resets_dismissed_targets_helper(self):
+        """When window closes, dismissed_targets_helper is reset to empty."""
+        clear_sequence = self.clear_action["sequence"]
+        helper_reset = clear_sequence[2]["choose"][0]
+
+        self.assertIn("dismissed_targets_helper", helper_reset["conditions"][0]["value_template"])
+        reset_action = helper_reset["sequence"][0]
+        self.assertEqual(reset_action["service"], "input_text.set_value")
+        self.assertEqual(reset_action["data"]["value"], "")
+
+    def test_dismiss_clears_notification_for_dismissed_target(self):
+        """When a target is dismissed, clear_notification is sent to that target."""
+        dismiss_branch = self.dismiss_choose[0]
+        self.assertIn("dismissed_service | length > 0", dismiss_branch["conditions"][0]["value_template"])
+
+        clear_service = dismiss_branch["sequence"][0]
+        self.assertEqual(clear_service["service"], "{{ dismissed_service | trim }}")
+        self.assertEqual(clear_service["data"]["message"], "clear_notification")
+        self.assertEqual(clear_service["data"]["data"]["tag"], "{{ notification_tag_full }}")
+
+    def test_all_dismissed_stops_loop(self):
+        """When all targets are dismissed, the automation stops."""
+        dismiss_branch = self.dismiss_choose[0]
+        # The stop action is inside a nested choose checking all targets dismissed
+        stop_choose = dismiss_branch["sequence"][2]["choose"][0]
+        self.assertIn("dismissed_services_next | length >= notification_targets | length",
+                      stop_choose["conditions"][0]["value_template"])
+        self.assertIn("stop", stop_choose["sequence"][0])
+
+    def test_wait_for_trigger_includes_dismiss_events(self):
+        """wait_for_trigger listens for mobile_app_notification_action dismiss events."""
+        repeat_sequence = self.blueprint["action"][2]["repeat"]["sequence"]
+        wait_triggers = repeat_sequence[0]["wait_for_trigger"]
+
+        trigger_ids = [t.get("id") for t in wait_triggers]
+        self.assertIn("notification_dismissed", trigger_ids)
+        self.assertIn("notification_cleared", trigger_ids)
+
+        dismiss_trigger = next(t for t in wait_triggers if t.get("id") == "notification_dismissed")
+        self.assertEqual(dismiss_trigger["platform"], "event")
+        self.assertEqual(dismiss_trigger["event_type"], "mobile_app_notification_action")
+        self.assertEqual(dismiss_trigger["event_data"]["action"], "DISMISS_NOTIFICATION")
 
     def test_winter_warning_condition_matches_room_below_threshold(self):
         template = self.reason_choose[0]["conditions"][0]["value_template"]

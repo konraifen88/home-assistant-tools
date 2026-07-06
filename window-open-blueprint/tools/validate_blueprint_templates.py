@@ -1,8 +1,7 @@
-import yaml
-from jinja2 import Environment, StrictUndefined
-from jinja2 import Environment, StrictUndefined
 import yaml as _yaml
+from jinja2 import Environment, StrictUndefined
 from types import SimpleNamespace
+import re
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -44,6 +43,7 @@ mock_states = {
     'sensor.indoor_temp': '21.3',
     'binary_sensor.window': 'on',
     'sensor.outside_temp': '19.0',
+    'input_text.dismissed_targets': '',
 }
 mock_attrs = {
     'binary_sensor.window': {'friendly_name': 'Window Sensor'}
@@ -66,6 +66,11 @@ def is_state(entity_id, value):
 def area_name(entity_id):
     return 'Living Room'
 
+def device_attr(device_id, attr):
+    if attr == 'name':
+        return 'test_phone'
+    return ''
+
 def now():
     return datetime.now()
 
@@ -86,23 +91,54 @@ def to_float(value, default=0.0):
         except Exception:
             return 0.0
 
+def slugify(value):
+    """Simple slugify like HA does."""
+    value = str(value).lower()
+    value = re.sub(r'[^a-z0-9]+', '_', value)
+    return value.strip('_')
+
 env.globals.update({
     'states': states,
     'state_attr': state_attr,
     'is_state': is_state,
     'area_name': area_name,
+    'device_attr': device_attr,
     'now': now,
     'as_timestamp': as_timestamp,
+    'dict': dict,
 })
-env.tests['is_number'] = lambda v: True if (v is not None and isinstance(v, (int, float))) or (isinstance(v, str) and v.replace('.', '', 1).isdigit()) else False
-env.tests['is_number'] = lambda v: True if (v is not None and isinstance(v, (int, float))) or (isinstance(v, str) and v.replace('.', '', 1).isdigit()) else False
+env.tests['is_number'] = lambda v: (
+    (v is not None and isinstance(v, (int, float)))
+    or (isinstance(v, str) and v.replace('.', '', 1).replace('-', '', 1).isdigit())
+)
 env.filters['is_number'] = lambda v: env.tests['is_number'](v)
 env.filters['float'] = to_float
+env.filters['slugify'] = slugify
 
-# provide additional mock variables commonly used in templates
-mock_repeat = SimpleNamespace(item='notify.test')
+# Mock repeat item as a dict (notification_targets item)
+mock_repeat_item = {'service': 'notify.mobile_app_test_phone', 'device_id': 'abc123'}
+mock_repeat = SimpleNamespace(item=mock_repeat_item)
+
+# Mock wait trigger for dismiss handling
+mock_wait_trigger = SimpleNamespace(
+    id='notification_dismissed',
+    event=SimpleNamespace(
+        data={
+            'action': 'DISMISS_NOTIFICATION',
+            'action_data': {
+                'tag': 'window_warning_binary_sensor_window',
+                'notify_service': 'notify.mobile_app_test_phone',
+            },
+        }
+    ),
+)
+mock_wait_trigger.event.data['get'] = mock_wait_trigger.event.data.get
+mock_wait_trigger.event.data['action_data']['get'] = mock_wait_trigger.event.data['action_data'].get
+mock_wait = SimpleNamespace(trigger=mock_wait_trigger)
+
 env.globals.update({
     'repeat': mock_repeat,
+    'wait': mock_wait,
     'area': 'Living Room',
     'warning_reason': 'none',
     'winter_enabled': True,
@@ -112,6 +148,7 @@ env.globals.update({
     'inside_temp': 21.3,
     'start_temp': 22.6,
     'min_temp': 20.0,
+    'current_temp_raw': 21.3,
     'summer_outside_guard_enabled': False,
     'summer_outside_margin': 0.5,
     'winter_temp_threshold': 18.0,
@@ -122,6 +159,13 @@ env.globals.update({
     'notification_title': 'Test title',
     'notification_message': 'Test message',
     'notification_tag_full': 'window_warning_binary_sensor_window',
+    'notification_targets': [{'service': 'notify.mobile_app_test_phone', 'device_id': 'abc123'}],
+    'dismissed_services': [],
+    'dismissed_service': 'notify.mobile_app_test_phone',
+    'dismissed_services_next': ['notify.mobile_app_test_phone'],
+    'dismissed_targets_helper': 'input_text.dismissed_targets',
+    'dismissal_action_title': 'Dismiss',
+    'notification_sent': False,
 })
 
 # Render all templates
@@ -137,7 +181,7 @@ for path, tpl in templates:
             open_state_value='on',
             closed_state_value='off',
             notify_services=['notify.test'],
-            # provide numeric named vars used in templates to avoid undefined
+            notify_mobile_app_devices=['abc123'],
             start_temp='21.3',
             min_temp='20.0',
             start_ts=as_timestamp(now()),
