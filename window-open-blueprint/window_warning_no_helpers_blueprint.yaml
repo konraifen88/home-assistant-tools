@@ -495,22 +495,16 @@ action:
 
         - variables:
             notification_title: >-
-              {% if warning_reason == 'winter' %}
-                {{ (winter_title | string) | replace('[ROOM]', area | string) | replace('[MINUTES]', open_minutes | float(0) | round(0) | int | string) }}
-              {% elif warning_reason == 'summer' %}
-                {{ (summer_title | string) | replace('[ROOM]', area | string) | replace('[MINUTES]', open_minutes | float(0) | round(0) | int | string) }}
-              {% elif warning_reason == 'open_too_long' %}
-                {{ (open_too_long_title | string) | replace('[ROOM]', area | string) | replace('[MINUTES]', open_minutes | float(0) | round(0) | int | string) }}
+              {% set titles = {'winter': winter_title, 'summer': summer_title, 'open_too_long': open_too_long_title} %}
+              {% if warning_reason in titles %}
+                {{ (titles[warning_reason] | string) | replace('[ROOM]', area | string) | replace('[MINUTES]', open_minutes | float(0) | round(0) | int | string) }}
               {% else %}
                 {{ none }}
               {% endif %}
             notification_message: >-
-              {% if warning_reason == 'winter' %}
-                {{ (winter_message | string) | replace('[ROOM]', area | string) | replace('[MINUTES]', open_minutes | float(0) | round(0) | int | string) }}
-              {% elif warning_reason == 'summer' %}
-                {{ (summer_message | string) | replace('[ROOM]', area | string) | replace('[MINUTES]', open_minutes | float(0) | round(0) | int | string) }}
-              {% elif warning_reason == 'open_too_long' %}
-                {{ (open_too_long_message | string) | replace('[ROOM]', area | string) | replace('[MINUTES]', open_minutes | float(0) | round(0) | int | string) }}
+              {% set messages = {'winter': winter_message, 'summer': summer_message, 'open_too_long': open_too_long_message} %}
+              {% if warning_reason in messages %}
+                {{ (messages[warning_reason] | string) | replace('[ROOM]', area | string) | replace('[MINUTES]', open_minutes | float(0) | round(0) | int | string) }}
               {% else %}
                 {{ none }}
               {% endif %}
