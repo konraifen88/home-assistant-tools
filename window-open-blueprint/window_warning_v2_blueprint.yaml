@@ -428,6 +428,71 @@ action:
             minutes: !input check_interval_minutes
           continue_on_timeout: true
 
+        # Handle dismiss events FIRST (before sending notifications)
+        - variables:
+            dismissed_service: >-
+              {%- if wait.trigger is not none and wait.trigger.event is defined -%}
+                {%- set data = wait.trigger.event.data -%}
+                {%- set action_data = data.get('action_data', {}) -%}
+                {%- if action_data.get('notify_service') -%}
+                  {{ action_data.get('notify_service') | trim }}
+                {%- elif data.get('notify_service') -%}
+                  {{ data.get('notify_service') | trim }}
+                {%- elif data.get('device_id') -%}
+                  {%- set ns = namespace(service='') -%}
+                  {%- for target in notification_targets -%}
+                    {%- if target.device_id == data.get('device_id') -%}
+                      {%- set ns.service = target.service -%}
+                    {%- endif -%}
+                  {%- endfor -%}
+                  {{ ns.service | trim }}
+                {%- else -%}
+                  {{ '' }}
+                {%- endif -%}
+              {%- else -%}
+                {{ '' }}
+              {%- endif -%}
+            dismissed_services: >-
+              {% set from_helper = (
+                states(dismissed_targets_helper).split(',')
+                | map('trim')
+                | reject('eq', '')
+                | list
+              ) if dismissed_targets_helper | length > 0 else dismissed_services %}
+              {% if dismissed_service | length > 0 %}
+                {{ (from_helper + [dismissed_service]) | unique | list }}
+              {% else %}
+                {{ from_helper }}
+              {% endif %}
+
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: "{{ dismissed_service | length > 0 }}"
+              sequence:
+                - service: "{{ dismissed_service | trim }}"
+                  data:
+                    message: clear_notification
+                    data:
+                      tag: "{{ notification_tag_full }}"
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ dismissed_targets_helper | length > 0 }}"
+                      sequence:
+                        - service: input_text.set_value
+                          target:
+                            entity_id: "{{ dismissed_targets_helper }}"
+                          data:
+                            value: "{{ dismissed_services | map('trim') | join(',') }}"
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: >-
+                            {{ dismissed_services | length >= notification_targets | length }}
+                      sequence:
+                        - stop: "All notification targets dismissed until window is closed"
+
         # Update measurements
         - variables:
             current_temp_raw: >-
@@ -435,15 +500,6 @@ action:
                  if states(inside_temp_entity) | is_number
                  else none }}
             open_minutes: "{{ ((as_timestamp(now()) | float - (start_ts | float(0))) / 60.0) | round(1) }}"
-            dismissed_services: >-
-              {{
-                states(dismissed_targets_helper).split(',')
-                | map('trim')
-                | reject('eq', '')
-                | list
-                if dismissed_targets_helper | length > 0
-                else dismissed_services
-              }}
 
         # Evaluate warning conditions based on mode
         - choose:
@@ -550,69 +606,6 @@ action:
                                         action_data:
                                           tag: "{{ notification_tag_full }}"
                                           notify_service: "{{ repeat.item.service | trim }}"
-
-        # Handle dismiss events
-        - variables:
-            dismissed_service: >-
-              {%- if wait.trigger is not none and wait.trigger.event is defined -%}
-                {%- set data = wait.trigger.event.data -%}
-                {%- set action_data = data.get('action_data', {}) -%}
-                {%- if action_data.get('notify_service') -%}
-                  {{ action_data.get('notify_service') | trim }}
-                {%- elif data.get('notify_service') -%}
-                  {{ data.get('notify_service') | trim }}
-                {%- elif data.get('device_id') -%}
-                  {%- set ns = namespace(service='') -%}
-                  {%- for target in notification_targets -%}
-                    {%- if target.device_id == data.get('device_id') -%}
-                      {%- set ns.service = target.service -%}
-                    {%- endif -%}
-                  {%- endfor -%}
-                  {{ ns.service | trim }}
-                {%- else -%}
-                  {{ '' }}
-                {%- endif -%}
-              {%- else -%}
-                {{ '' }}
-              {%- endif -%}
-            dismissed_services_next: >-
-              {{
-                (dismissed_services + [dismissed_service]) | unique | list
-                if dismissed_service | length > 0
-                else dismissed_services
-              }}
-
-        - variables:
-            dismissed_services: "{{ dismissed_services_next }}"
-
-        - choose:
-            - conditions:
-                - condition: template
-                  value_template: "{{ dismissed_service | length > 0 }}"
-              sequence:
-                - service: "{{ dismissed_service | trim }}"
-                  data:
-                    message: clear_notification
-                    data:
-                      tag: "{{ notification_tag_full }}"
-                - choose:
-                    - conditions:
-                        - condition: template
-                          value_template: "{{ dismissed_targets_helper | length > 0 }}"
-                      sequence:
-                        - service: input_text.set_value
-                          target:
-                            entity_id: "{{ dismissed_targets_helper }}"
-                          data:
-                            value: "{{ dismissed_services_next | map('trim') | join(',') }}"
-
-                - choose:
-                    - conditions:
-                        - condition: template
-                          value_template: >-
-                            {{ dismissed_services_next | length >= notification_targets | length }}
-                      sequence:
-                        - stop: "All notification targets dismissed until window is closed"
 
   # Window closed – clear notifications
   - choose:

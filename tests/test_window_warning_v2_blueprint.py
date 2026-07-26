@@ -81,6 +81,15 @@ class WindowWarningV2BlueprintTest(unittest.TestCase):
         # action[5] = choose (clear on close)
         self.forecast_variables = self.actions[2]["variables"]
         self.repeat_sequence = self.actions[4]["repeat"]["sequence"]
+        # repeat_sequence:
+        # [0] wait_for_trigger
+        # [1] variables (dismiss handling)
+        # [2] choose (dismiss actions)
+        # [3] variables (measurements)
+        # [4] choose (warning conditions)
+        # [5] variables (last_temp)
+        # [6] variables (notification title/message)
+        # [7] choose (send notification)
 
     def test_blueprint_loads_without_errors(self):
         """The blueprint YAML loads correctly with !input tags."""
@@ -160,7 +169,7 @@ class WindowWarningV2BlueprintTest(unittest.TestCase):
     def test_summer_warning_condition(self):
         """Summer warning fires when open long enough and not already active."""
         # Find the summer choose branch in repeat sequence
-        warning_choose = self.repeat_sequence[2]["choose"]
+        warning_choose = self.repeat_sequence[4]["choose"]
         summer_condition = warning_choose[0]["conditions"][0]["value_template"]
 
         context = {
@@ -174,7 +183,7 @@ class WindowWarningV2BlueprintTest(unittest.TestCase):
 
     def test_summer_warning_does_not_fire_before_min_open(self):
         """Summer warning does not fire before minimum open time."""
-        warning_choose = self.repeat_sequence[2]["choose"]
+        warning_choose = self.repeat_sequence[4]["choose"]
         summer_condition = warning_choose[0]["conditions"][0]["value_template"]
 
         context = {
@@ -188,7 +197,7 @@ class WindowWarningV2BlueprintTest(unittest.TestCase):
 
     def test_winter_warning_condition(self):
         """Winter warning fires when room temp is below threshold."""
-        warning_choose = self.repeat_sequence[2]["choose"]
+        warning_choose = self.repeat_sequence[4]["choose"]
         winter_condition = warning_choose[1]["conditions"][0]["value_template"]
 
         context = {
@@ -201,7 +210,7 @@ class WindowWarningV2BlueprintTest(unittest.TestCase):
 
     def test_winter_warning_does_not_fire_above_threshold(self):
         """Winter warning does not fire when room temp is above threshold."""
-        warning_choose = self.repeat_sequence[2]["choose"]
+        warning_choose = self.repeat_sequence[4]["choose"]
         winter_condition = warning_choose[1]["conditions"][0]["value_template"]
 
         context = {
@@ -214,7 +223,7 @@ class WindowWarningV2BlueprintTest(unittest.TestCase):
 
     def test_normal_warning_condition(self):
         """Normal warning fires when open too long."""
-        warning_choose = self.repeat_sequence[2]["choose"]
+        warning_choose = self.repeat_sequence[4]["choose"]
         normal_condition = warning_choose[2]["conditions"][0]["value_template"]
 
         context = {
@@ -227,7 +236,7 @@ class WindowWarningV2BlueprintTest(unittest.TestCase):
 
     def test_normal_warning_does_not_fire_before_time(self):
         """Normal warning does not fire before configured minutes."""
-        warning_choose = self.repeat_sequence[2]["choose"]
+        warning_choose = self.repeat_sequence[4]["choose"]
         normal_condition = warning_choose[2]["conditions"][0]["value_template"]
 
         context = {
@@ -240,7 +249,7 @@ class WindowWarningV2BlueprintTest(unittest.TestCase):
 
     def test_warning_does_not_retrigger_when_already_active(self):
         """No warning condition fires when warning_active is already true."""
-        warning_choose = self.repeat_sequence[2]["choose"]
+        warning_choose = self.repeat_sequence[4]["choose"]
 
         for i, branch in enumerate(warning_choose):
             template = branch["conditions"][0]["value_template"]
@@ -258,7 +267,7 @@ class WindowWarningV2BlueprintTest(unittest.TestCase):
 
     def test_notification_title_uses_placeholders(self):
         """Notification title replaces [ROOM] and [MINUTES] placeholders."""
-        notification_vars = self.repeat_sequence[4]["variables"]
+        notification_vars = self.repeat_sequence[6]["variables"]
         title_template = notification_vars["notification_title"]
 
         context = {
@@ -275,7 +284,7 @@ class WindowWarningV2BlueprintTest(unittest.TestCase):
 
     def test_notification_message_uses_placeholders(self):
         """Notification message replaces [ROOM] and [MINUTES] placeholders."""
-        notification_vars = self.repeat_sequence[4]["variables"]
+        notification_vars = self.repeat_sequence[6]["variables"]
         message_template = notification_vars["notification_message"]
 
         context = {
@@ -292,7 +301,7 @@ class WindowWarningV2BlueprintTest(unittest.TestCase):
 
     def test_notification_not_sent_when_warning_inactive(self):
         """Notification title is none when warning is not active."""
-        notification_vars = self.repeat_sequence[4]["variables"]
+        notification_vars = self.repeat_sequence[6]["variables"]
         title_template = notification_vars["notification_title"]
 
         context = {
@@ -310,7 +319,7 @@ class WindowWarningV2BlueprintTest(unittest.TestCase):
     def test_notification_includes_dismiss_action(self):
         """Notification data includes dismiss action button."""
         # Navigate to the notification sending action
-        notification_choose = self.repeat_sequence[5]["choose"][0]
+        notification_choose = self.repeat_sequence[7]["choose"][0]
         notify_repeat = notification_choose["sequence"][0]["repeat"]
         notify_action = notify_repeat["sequence"][0]["choose"][0]["sequence"][0]
 
@@ -348,7 +357,7 @@ class WindowWarningV2BlueprintTest(unittest.TestCase):
 
     def test_winter_warning_does_not_fire_when_temp_unavailable(self):
         """Winter warning does not fire when current_temp_raw is none."""
-        warning_choose = self.repeat_sequence[2]["choose"]
+        warning_choose = self.repeat_sequence[4]["choose"]
         winter_condition = warning_choose[1]["conditions"][0]["value_template"]
 
         context = {
