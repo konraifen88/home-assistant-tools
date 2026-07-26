@@ -1,0 +1,653 @@
+blueprint:
+  name: Window Warning v2 – Forecast-based
+  description: >
+    Warns when a window has been left open, with mode selection based on weather
+    forecast at the time of opening:
+    - Summer (forecast >25°C): warns when indoor temperature has been rising for
+      a configured duration, indicating the cool night air is gone.
+    - Winter (forecast <18°C): warns when indoor temperature drops below a threshold.
+    - Normal (18-25°C): warns after the window has been open for too long.
+
+    The mode is determined once when the window opens by checking the daily forecast
+    for the next day (if opened after the configured forecast hour) or the current day.
+
+    Notifications are updating (not repeated), tagged, and include a dismiss action
+    button per target. Dismissed targets stop receiving updates until the window closes.
+  domain: automation
+  author: Konrad Gruener
+
+  input:
+    room_settings:
+      name: Room and sensors
+      icon: mdi:home-thermometer
+      input:
+        window_sensor:
+          name: Window sensor
+          description: "Binary sensor for the window. Default: on = open, off = closed."
+          selector:
+            entity:
+              domain: binary_sensor
+
+        inside_temp_sensor:
+          name: Indoor temperature sensor
+          description: Temperature sensor placed in the room.
+          selector:
+            entity:
+              domain: sensor
+              device_class: temperature
+
+        weather_entity:
+          name: Weather entity
+          description: >
+            Weather entity used for forecast-based mode determination.
+            Must support daily forecasts.
+          default: "weather.home"
+          selector:
+            entity:
+              domain: weather
+
+        open_state:
+          name: Open state value
+          description: Usually the window contact reports "on" when open.
+          default: "on"
+          selector:
+            text:
+
+        closed_state:
+          name: Closed state value
+          description: Usually the window contact reports "off" when closed.
+          default: "off"
+          selector:
+            text:
+
+    mode_settings:
+      name: Mode determination
+      icon: mdi:thermometer-auto
+      input:
+        forecast_hour:
+          name: Forecast evaluation hour
+          description: >
+            Hour of the day (24h format). If the window is opened after this hour,
+            the forecast for the NEXT day is used. Before this hour, the current day's
+            forecast is used.
+          default: 18
+          selector:
+            number:
+              min: 0
+              max: 23
+              step: 1
+              unit_of_measurement: h
+              mode: box
+
+        summer_temp_threshold:
+          name: Summer threshold
+          description: >
+            If the forecasted maximum temperature is above this value, summer mode
+            is activated (room cooling / rising detection).
+          default: 25
+          selector:
+            number:
+              min: 15
+              max: 40
+              step: 0.5
+              unit_of_measurement: "°C"
+              mode: box
+
+        winter_temp_threshold:
+          name: Winter threshold
+          description: >
+            If the forecasted maximum temperature is below this value, winter mode
+            is activated (room temperature monitoring).
+          default: 18
+          selector:
+            number:
+              min: 0
+              max: 25
+              step: 0.5
+              unit_of_measurement: "°C"
+              mode: box
+
+    summer_settings:
+      name: "Summer mode: Temperature rising"
+      icon: mdi:weather-sunny-alert
+      input:
+        summer_rising_minutes:
+          name: Rising duration before warning
+          description: >
+            Warn when the indoor temperature has been continuously rising for this
+            many minutes. Indicates the cool air from the night is gone.
+          default: 15
+          selector:
+            number:
+              min: 5
+              max: 120
+              step: 5
+              unit_of_measurement: min
+              mode: box
+
+        summer_min_open_minutes:
+          name: Minimum open time before summer check
+          description: >
+            The window must be open for at least this long before the rising
+            temperature check is active. Prevents false alarms from sensor noise
+            right after opening.
+          default: 30
+          selector:
+            number:
+              min: 0
+              max: 480
+              step: 5
+              unit_of_measurement: min
+              mode: box
+
+        summer_title:
+          name: Notification title (summer)
+          default: "[ROOM] Window open"
+          selector:
+            text:
+
+        summer_message:
+          name: Notification message (summer)
+          default: >-
+            [ROOM] window has been open for [MINUTES] minutes. Temperature is rising – please close it.
+          selector:
+            text:
+              multiline: true
+
+    winter_settings:
+      name: "Winter mode: Room cooling"
+      icon: mdi:snowflake-alert
+      input:
+        winter_room_temp_threshold:
+          name: Room temperature lower bound
+          description: >
+            Warn when the indoor temperature drops below this value while the
+            window is open in winter mode.
+          default: 18
+          selector:
+            number:
+              min: 5
+              max: 25
+              step: 0.5
+              unit_of_measurement: "°C"
+              mode: box
+
+        winter_title:
+          name: Notification title (winter)
+          default: "[ROOM] Window open"
+          selector:
+            text:
+
+        winter_message:
+          name: Notification message (winter)
+          default: >-
+            [ROOM] window has been open for [MINUTES] minutes and the room is getting cold. Please close it.
+          selector:
+            text:
+              multiline: true
+
+    normal_settings:
+      name: "Normal mode: Open too long"
+      icon: mdi:timer-alert
+      input:
+        normal_open_minutes:
+          name: Minutes before warning
+          description: >
+            In normal mode (mild weather), warn after the window has been open
+            for this many minutes.
+          default: 30
+          selector:
+            number:
+              min: 5
+              max: 240
+              step: 5
+              unit_of_measurement: min
+              mode: box
+
+        normal_title:
+          name: Notification title (normal)
+          default: "[ROOM] Window open"
+          selector:
+            text:
+
+        normal_message:
+          name: Notification message (normal)
+          default: >-
+            [ROOM] window has been open for [MINUTES] minutes. Please close it.
+          selector:
+            text:
+              multiline: true
+
+    notification_settings:
+      name: Notifications
+      icon: mdi:bell
+      input:
+        notify_mobile_app_devices:
+          name: Mobile app notify devices
+          description: >
+            Mobile app devices offered by Home Assistant. Notifications are sent
+            through notify.mobile_app_<device_id>.
+          default: []
+          selector:
+            device:
+              integration: mobile_app
+              multiple: true
+
+        notify_services:
+          name: Additional notify services
+          description: >
+            Optional list of notify services or notify groups, e.g.:
+            notify.mobile_app_konrad
+            notify.family
+          default: []
+          selector:
+            text:
+              multiple: true
+
+        notification_tag:
+          name: Notification update tag
+          description: >
+            Tag used to update the active notification instead of creating a new
+            one each time.
+          default: "window_warning_v2"
+          selector:
+            text:
+
+        notification_clear_service:
+          name: Notification clear service
+          description: >
+            Optional additional service that can clear or dismiss the active notification
+            when the window is closed.
+          default: ""
+          selector:
+            text:
+
+        dismissal_action_title:
+          name: Dismiss action label
+          description: >
+            Action button label. Tapping this button stops further updates for
+            that device until the window is closed.
+          default: "Dismiss"
+          selector:
+            text:
+
+        dismissed_targets_helper:
+          name: Dismissed targets helper
+          description: >
+            Optional input_text helper used to remember which notify targets have
+            dismissed the current notification while the window stays open.
+          default: ""
+          selector:
+            entity:
+              domain:
+                - input_text
+
+        check_interval_minutes:
+          name: Check interval
+          description: >
+            How often (in minutes) the automation re-evaluates, even if temperature
+            hasn't changed. Temperature changes trigger an immediate re-check.
+          default: 2
+          selector:
+            number:
+              min: 1
+              max: 30
+              step: 1
+              unit_of_measurement: min
+              mode: box
+
+trigger:
+  - platform: state
+    entity_id: !input window_sensor
+    to: !input open_state
+    id: opened
+
+condition: []
+
+action:
+  - variables:
+      window_entity: !input window_sensor
+      inside_temp_entity: !input inside_temp_sensor
+      weather_entity: !input weather_entity
+      open_state_value: !input open_state
+      closed_state_value: !input closed_state
+      forecast_hour: !input forecast_hour
+      summer_temp_threshold: !input summer_temp_threshold
+      winter_temp_threshold: !input winter_temp_threshold
+      summer_rising_minutes: !input summer_rising_minutes
+      summer_min_open_minutes: !input summer_min_open_minutes
+      winter_room_temp_threshold: !input winter_room_temp_threshold
+      normal_open_minutes: !input normal_open_minutes
+      notify_mobile_app_devices: !input notify_mobile_app_devices
+      notify_services: !input notify_services
+      notification_tag: !input notification_tag
+      notification_clear_service: !input notification_clear_service
+      dismissal_action_title: !input dismissal_action_title
+      dismissed_targets_helper: !input dismissed_targets_helper
+      check_interval_minutes: !input check_interval_minutes
+      summer_title: !input summer_title
+      summer_message: !input summer_message
+      winter_title: !input winter_title
+      winter_message: !input winter_message
+      normal_title: !input normal_title
+      normal_message: !input normal_message
+      area: >-
+        {{
+          area_name(window_entity)
+          or area_name(inside_temp_entity)
+          or state_attr(window_entity, 'friendly_name')
+          or window_entity
+        }}
+      start_ts: "{{ as_timestamp(now()) | float }}"
+      start_temp: >-
+        {{ states(inside_temp_entity) | float(0)
+           if states(inside_temp_entity) | is_number
+           else none }}
+      notification_tag_full: "{{ (notification_tag ~ '_' ~ window_entity) | replace('.', '_') }}"
+      notification_targets: >-
+        {%- set ns = namespace(targets=[]) -%}
+        {%- for device_id in notify_mobile_app_devices -%}
+          {%- set service = 'notify.mobile_app_' ~ (device_attr(device_id, 'name') | slugify) -%}
+          {%- set ns.targets = ns.targets + [dict(service=service, device_id=device_id)] -%}
+        {%- endfor -%}
+        {%- for service in notify_services -%}
+          {%- set ns.targets = ns.targets + [dict(service=service | trim, device_id='')] -%}
+        {%- endfor -%}
+        {{ ns.targets }}
+      dismissed_services: []
+      warning_active: false
+      mode: "unknown"
+      rising_since_ts: null
+      last_temp: null
+
+  # Determine mode from forecast
+  - action: weather.get_forecasts
+    target:
+      entity_id: "{{ weather_entity }}"
+    data:
+      type: daily
+    response_variable: forecast_response
+
+  - variables:
+      forecast_data: "{{ forecast_response[weather_entity].forecast }}"
+      use_tomorrow: "{{ now().hour >= forecast_hour }}"
+      forecast_day: >-
+        {% if use_tomorrow and forecast_data | length > 1 %}
+          {{ forecast_data[1] }}
+        {% else %}
+          {{ forecast_data[0] }}
+        {% endif %}
+      forecast_temp: "{{ forecast_day.temperature | float(20) }}"
+      mode: >-
+        {% if forecast_temp > summer_temp_threshold | float %}
+          summer
+        {% elif forecast_temp < winter_temp_threshold | float %}
+          winter
+        {% else %}
+          normal
+        {% endif %}
+
+  # Reset dismissed targets helper
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ dismissed_targets_helper | length > 0 }}"
+        sequence:
+          - service: input_text.set_value
+            target:
+              entity_id: "{{ dismissed_targets_helper }}"
+            data:
+              value: ""
+
+  # Main monitoring loop
+  - repeat:
+      while:
+        - condition: template
+          value_template: "{{ is_state(window_entity, open_state_value) }}"
+      sequence:
+        - wait_for_trigger:
+            - platform: state
+              entity_id: !input window_sensor
+              to: !input closed_state
+              id: closed
+
+            - platform: state
+              entity_id: !input inside_temp_sensor
+              id: temperature_changed
+
+            - platform: event
+              event_type: mobile_app_notification_action
+              event_data:
+                action: "DISMISS_NOTIFICATION"
+              id: notification_dismissed
+
+            - platform: event
+              event_type: mobile_app_notification_cleared
+              id: notification_cleared
+          timeout:
+            minutes: !input check_interval_minutes
+          continue_on_timeout: true
+
+        # Update measurements
+        - variables:
+            current_temp_raw: >-
+              {{ states(inside_temp_entity) | float(0)
+                 if states(inside_temp_entity) | is_number
+                 else none }}
+            open_minutes: "{{ ((as_timestamp(now()) | float - (start_ts | float(0))) / 60.0) | round(1) }}"
+            dismissed_services: >-
+              {{
+                states(dismissed_targets_helper).split(',')
+                | map('trim')
+                | reject('eq', '')
+                | list
+                if dismissed_targets_helper | length > 0
+                else dismissed_services
+              }}
+
+        # Evaluate warning conditions based on mode
+        - choose:
+            # SUMMER: temperature rising for X minutes
+            - conditions:
+                - condition: template
+                  value_template: >-
+                    {{
+                      not warning_active
+                      and mode == 'summer'
+                      and current_temp_raw is not none
+                      and open_minutes | float >= summer_min_open_minutes | float
+                    }}
+              sequence:
+                - variables:
+                    rising_since_ts: >-
+                      {% if last_temp is not none and current_temp_raw | float > last_temp | float %}
+                        {{ rising_since_ts if rising_since_ts is not none else as_timestamp(now()) | float }}
+                      {% else %}
+                        {{ none }}
+                      {% endif %}
+                    rising_minutes: >-
+                      {% if rising_since_ts is not none %}
+                        {{ ((as_timestamp(now()) | float - rising_since_ts | float) / 60.0) | round(1) }}
+                      {% else %}
+                        {{ 0 }}
+                      {% endif %}
+                    warning_active: >-
+                      {{ rising_minutes | float >= summer_rising_minutes | float }}
+
+            # WINTER: room temp below threshold
+            - conditions:
+                - condition: template
+                  value_template: >-
+                    {{
+                      not warning_active
+                      and mode == 'winter'
+                      and current_temp_raw is not none
+                      and current_temp_raw | float < winter_room_temp_threshold | float
+                    }}
+              sequence:
+                - variables:
+                    warning_active: true
+
+            # NORMAL: open too long
+            - conditions:
+                - condition: template
+                  value_template: >-
+                    {{
+                      not warning_active
+                      and mode == 'normal'
+                      and open_minutes | float >= normal_open_minutes | float
+                    }}
+              sequence:
+                - variables:
+                    warning_active: true
+
+        # Update last_temp for next iteration
+        - variables:
+            last_temp: "{{ current_temp_raw }}"
+
+        # Build notification text
+        - variables:
+            notification_title: >-
+              {% set titles = {'summer': summer_title, 'winter': winter_title, 'normal': normal_title} %}
+              {% if warning_active and mode in titles %}
+                {{ (titles[mode] | string) | replace('[ROOM]', area | string) | replace('[MINUTES]', open_minutes | float(0) | round(0) | int | string) }}
+              {% else %}
+                {{ none }}
+              {% endif %}
+            notification_message: >-
+              {% set messages = {'summer': summer_message, 'winter': winter_message, 'normal': normal_message} %}
+              {% if warning_active and mode in messages %}
+                {{ (messages[mode] | string) | replace('[ROOM]', area | string) | replace('[MINUTES]', open_minutes | float(0) | round(0) | int | string) }}
+              {% else %}
+                {{ none }}
+              {% endif %}
+
+        # Send/update notification if warning is active
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: "{{ warning_active }}"
+              sequence:
+                - repeat:
+                    for_each: "{{ notification_targets }}"
+                    sequence:
+                      - choose:
+                          - conditions:
+                              - condition: template
+                                value_template: "{{ repeat.item.service | trim not in dismissed_services }}"
+                            sequence:
+                              - service: "{{ repeat.item.service | trim }}"
+                                data:
+                                  title: "{{ notification_title }}"
+                                  message: >-
+                                    {{ notification_message if notification_message is not none and notification_message | string | trim != '' else area }}
+                                  data:
+                                    tag: "{{ notification_tag_full }}"
+                                    alert_once: true
+                                    actions:
+                                      - action: "DISMISS_NOTIFICATION"
+                                        title: "{{ dismissal_action_title }}"
+                                        action_data:
+                                          tag: "{{ notification_tag_full }}"
+                                          notify_service: "{{ repeat.item.service | trim }}"
+
+        # Handle dismiss events
+        - variables:
+            dismissed_service: >-
+              {%- if wait.trigger is not none and wait.trigger.event is defined -%}
+                {%- set data = wait.trigger.event.data -%}
+                {%- set action_data = data.get('action_data', {}) -%}
+                {%- if action_data.get('notify_service') -%}
+                  {{ action_data.get('notify_service') | trim }}
+                {%- elif data.get('notify_service') -%}
+                  {{ data.get('notify_service') | trim }}
+                {%- elif data.get('device_id') -%}
+                  {%- set ns = namespace(service='') -%}
+                  {%- for target in notification_targets -%}
+                    {%- if target.device_id == data.get('device_id') -%}
+                      {%- set ns.service = target.service -%}
+                    {%- endif -%}
+                  {%- endfor -%}
+                  {{ ns.service | trim }}
+                {%- else -%}
+                  {{ '' }}
+                {%- endif -%}
+              {%- else -%}
+                {{ '' }}
+              {%- endif -%}
+            dismissed_services_next: >-
+              {{
+                (dismissed_services + [dismissed_service]) | unique | list
+                if dismissed_service | length > 0
+                else dismissed_services
+              }}
+
+        - variables:
+            dismissed_services: "{{ dismissed_services_next }}"
+
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: "{{ dismissed_service | length > 0 }}"
+              sequence:
+                - service: "{{ dismissed_service | trim }}"
+                  data:
+                    message: clear_notification
+                    data:
+                      tag: "{{ notification_tag_full }}"
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ dismissed_targets_helper | length > 0 }}"
+                      sequence:
+                        - service: input_text.set_value
+                          target:
+                            entity_id: "{{ dismissed_targets_helper }}"
+                          data:
+                            value: "{{ dismissed_services_next | map('trim') | join(',') }}"
+
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: >-
+                            {{ dismissed_services_next | length >= notification_targets | length }}
+                      sequence:
+                        - stop: "All notification targets dismissed until window is closed"
+
+  # Window closed – clear notifications
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ warning_active }}"
+        sequence:
+          - repeat:
+              for_each: "{{ notification_targets }}"
+              sequence:
+                - service: "{{ repeat.item.service | trim }}"
+                  data:
+                    message: clear_notification
+                    data:
+                      tag: "{{ notification_tag_full }}"
+
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ notification_clear_service | length > 0 }}"
+                sequence:
+                  - service: "{{ notification_clear_service }}"
+                    data:
+                      tag: "{{ notification_tag_full }}"
+
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ dismissed_targets_helper | length > 0 }}"
+                sequence:
+                  - service: input_text.set_value
+                    target:
+                      entity_id: "{{ dismissed_targets_helper }}"
+                    data:
+                      value: ""
+
+mode: single
+max_exceeded: silent
